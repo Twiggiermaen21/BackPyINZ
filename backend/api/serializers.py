@@ -35,28 +35,57 @@ class GenerateImageSerializer(serializers.ModelSerializer):
         }
         
 class CalendarSerializer(serializers.ModelSerializer):
+    top_image_url = serializers.SerializerMethodField()
+    bottom_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Calendar
         fields = [
             "id", "created_at", "author",
-            "top_image", "bottom_type", "bottom_image",
+            "top_image", "top_image_url",
+            "bottom_type", "bottom_image", "bottom_image_url",
             "bottom_color", "gradient_start_color", "gradient_end_color",
             "gradient_direction", "gradient_theme"
         ]
-        read_only_fields = ["id", "created_at", "author"]
+        read_only_fields = ["id", "created_at", "author", "top_image_url", "bottom_image_url"]
+
+    def get_top_image_url(self, obj):
+        return obj.top_image.url if obj.top_image and obj.top_image.url else None
+
+    def get_bottom_image_url(self, obj):
+        return obj.bottom_image.url if obj.bottom_image and obj.bottom_image.url else None
 
     def validate(self, data):
         bottom_type = data.get("bottom_type")
 
-        if bottom_type == "image" and not data.get("bottom_image"):
-            raise serializers.ValidationError("Dla typu 'image' wymagane jest pole bottom_image.")
-        if bottom_type == "color" and not data.get("bottom_color"):
-            raise serializers.ValidationError("Dla typu 'color' wymagane jest pole bottom_color.")
-        if bottom_type == "gradient":
-            if not data.get("gradient_start_color") or not data.get("gradient_end_color"):
-                raise serializers.ValidationError("Dla gradientu wymagane są oba kolory.")
-        if bottom_type == "theme-gradient" and not data.get("gradient_theme"):
-            raise serializers.ValidationError("Dla themed gradient wymagane jest gradient_theme.")
+        if bottom_type == "image":
+            if not data.get("bottom_image"):
+                raise serializers.ValidationError({
+                    "bottom_image": "Dla typu 'image' wymagane jest pole bottom_image."
+                })
+
+        elif bottom_type == "color":
+            if not data.get("bottom_color"):
+                raise serializers.ValidationError({
+                    "bottom_color": "Dla typu 'color' wymagane jest pole bottom_color."
+                })
+
+        elif bottom_type == "gradient":
+            missing = []
+            if not data.get("gradient_start_color"):
+                missing.append("gradient_start_color")
+            if not data.get("gradient_end_color"):
+                missing.append("gradient_end_color")
+            if missing:
+                raise serializers.ValidationError({
+                    field: "To pole jest wymagane dla gradientu." for field in missing
+                })
+
+        elif bottom_type == "theme-gradient":
+            if not data.get("gradient_theme"):
+                raise serializers.ValidationError({
+                    "gradient_theme": "Dla themed gradient wymagane jest gradient_theme."
+                })
 
         return data
 

@@ -139,13 +139,29 @@ class GenerateImage(generics.ListCreateAPIView):
 
 
 class CalendarCreateView(generics.ListCreateAPIView):
-    queryset = Calendar.objects.all()
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Calendar.objects.filter(author=self.request.user).order_by("-created_at")
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
+    def list(self, request, *args, **kwargs):
+        """
+        Nadpisujemy `list`, żeby dodać `generated_images` do odpowiedzi.
+        """
+        calendars = self.get_queryset()
+        calendar_serializer = self.get_serializer(calendars, many=True)
+
+        generated_images = GeneratedImage.objects.filter(author=request.user)
+        generated_serializer = GenerateImageSerializer(generated_images, many=True)
+
+        return response.Response({
+            "calendars": calendar_serializer.data,
+            
+        })
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
     queryset = OutpaintingSDXL.objects.all()
