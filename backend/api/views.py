@@ -149,46 +149,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
         """
         Tworzymy kalendarz i automatycznie dodajemy 2 pola tekstowe i 1 obrazek.
         """
-        calendar = serializer.save(author=self.request.user)
-
-        # content type dla generica
-        text_ct = ContentType.objects.get_for_model(CalendarMonthFieldText)
-        img_ct = ContentType.objects.get_for_model(CalendarMonthFieldImage)
-
-        # 2 pola tekstowe
-        text1 = CalendarMonthFieldText.objects.create(
-            author=self.request.user,
-            text="Domyślny tekst 1",
-            font="Arial",
-            weight="normal",
-        )
-        img2 = CalendarMonthFieldImage.objects.create(
-            author=self.request.user,
-            path="/static/def22ault.png",  # przykładowy placeholder
-            position="left",
-            size=120,
-        )
-
-        # 1 pole obrazkowe
-        img = CalendarMonthFieldImage.objects.create(
-            author=self.request.user,
-            path="/static/default.png",  # przykładowy placeholder
-            position="center",
-            size=100,
-        )
-
-        # podpinamy je do kalendarza
-        calendar.field1_content_type = text_ct
-        calendar.field1_object_id = text1.id
-
-        calendar.field2_content_type = img_ct
-        calendar.field2_object_id = img2.id
-
-        calendar.field3_content_type = img_ct
-        calendar.field3_object_id = img.id
-
-        calendar.save()
-
+        serializer.save(author=self.request.user)
+        print("Calendar created:", serializer.data)
     def list(self, request, *args, **kwargs):
         """
         Nadpisujemy `list`, żeby dodać `generated_images` do odpowiedzi.
