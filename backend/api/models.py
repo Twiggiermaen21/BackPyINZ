@@ -1,4 +1,6 @@
 from django.db import models
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
 # Create your models here.
 
@@ -30,13 +32,35 @@ class GeneratedImage(models.Model):
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
 
-
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    top_image = models.ForeignKey('GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_top_image")
+    top_image = models.ForeignKey(
+        'GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_top_image"
+    )
 
-    # bottom type
+    # Rok
+    year_text = models.CharField(max_length=10, blank=True, null=True)   
+    year_color = models.CharField(max_length=7, blank=True, null=True)   
+    year_size = models.PositiveIntegerField(blank=True, null=True)       
+    year_font = models.CharField(max_length=100, blank=True, null=True)  
+    year_weight = models.CharField(max_length=20, blank=True, null=True) 
+    year_position = models.CharField(max_length=50, blank=True, null=True)
+
+    # Pola ogólne (GenericForeignKey)
+    field1_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    field1_object_id = models.PositiveIntegerField(null=True, blank=True)
+    field1 = GenericForeignKey("field1_content_type", "field1_object_id")
+
+    field2_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    field2_object_id = models.PositiveIntegerField(null=True, blank=True)
+    field2 = GenericForeignKey("field2_content_type", "field2_object_id")
+
+    field3_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    field3_object_id = models.PositiveIntegerField(null=True, blank=True)
+    field3 = GenericForeignKey("field3_content_type", "field3_object_id")
+
+    # Dolna część kalendarza
     BOTTOM_TYPE_CHOICES = [
         ("image", "Image"),
         ("color", "Color"),
@@ -45,19 +69,44 @@ class Calendar(models.Model):
     ]
     bottom_type = models.CharField(max_length=20, choices=BOTTOM_TYPE_CHOICES)
 
-    # if bottom is an image
     bottom_image = models.ForeignKey('GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_bottom_image")
+    bottom_color = models.CharField(max_length=7, blank=True, null=True)  
 
-    # if bottom is a solid color
-    bottom_color = models.CharField(max_length=7, blank=True, null=True)  # e.g. "#ffffff"
-
-    # if bottom is a gradient
     gradient_start_color = models.CharField(max_length=7, blank=True, null=True)
     gradient_end_color = models.CharField(max_length=7, blank=True, null=True)
-    gradient_direction = models.CharField(max_length=20, blank=True, null=True)  # e.g. "to bottom right"
+    gradient_direction = models.CharField(max_length=20, blank=True, null=True)  
+    gradient_theme = models.CharField(max_length=50, blank=True, null=True)  
 
-    # if gradient is a themed one
-    gradient_theme = models.CharField(max_length=50, blank=True, null=True)  # e.g. "aurora", "mesh"
+
+class CalendarMonthFieldText(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    text = models.CharField(max_length=255)
+    font = models.CharField(max_length=100, blank=True, null=True)
+    weight = models.CharField(max_length=50, blank=True, null=True)  
+
+
+class CalendarMonthFieldImage(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    path = models.CharField(max_length=500)  
+    position = models.CharField(max_length=50, blank=True, null=True)
+    size = models.PositiveIntegerField(blank=True, null=True)  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class OutpaintingSDXL(models.Model):
@@ -113,6 +162,5 @@ class Realizm(models.Model):
 class StylNarracyjny(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
-
 class CalendarType(models.Model):
     nazwa = models.CharField(max_length=100)

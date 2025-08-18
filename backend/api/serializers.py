@@ -34,6 +34,39 @@ class GenerateImageSerializer(serializers.ModelSerializer):
             "created_at": {"read_only": True},
         }
         
+class CalendarMonthFieldTextSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarMonthFieldText
+        fields = ["id", "created_at", "author", "text", "font", "weight"]
+        read_only_fields = ["id", "created_at", "author"]
+
+
+class CalendarMonthFieldImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarMonthFieldImage
+        fields = ["id", "created_at", "author", "path", "position", "size"]
+        read_only_fields = ["id", "created_at", "author"]
+
+
+
+from rest_framework import serializers
+from .models import Calendar, CalendarMonthFieldText, CalendarMonthFieldImage
+
+
+class CalendarMonthFieldTextSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarMonthFieldText
+        fields = ["id", "created_at", "author", "text", "font", "weight"]
+        read_only_fields = ["id", "created_at", "author"]
+
+
+class CalendarMonthFieldImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarMonthFieldImage
+        fields = ["id", "created_at", "author", "path", "position", "size"]
+        read_only_fields = ["id", "created_at", "author"]
+
+
 class CalendarSerializer(serializers.ModelSerializer):
     top_image_url = serializers.SerializerMethodField()
     bottom_image_url = serializers.SerializerMethodField()
@@ -43,34 +76,44 @@ class CalendarSerializer(serializers.ModelSerializer):
         fields = [
             "id", "created_at", "author",
             "top_image", "top_image_url",
+
+            # year fields
+            "year_text", "year_color", "year_size", "year_font",
+            "year_weight", "year_position",
+
+            # generic fields (na razie tylko ID, bez nested serialization)
+            "field1_object_id", "field2_object_id", "field3_object_id",
+
+            # bottom section
             "bottom_type", "bottom_image", "bottom_image_url",
             "bottom_color", "gradient_start_color", "gradient_end_color",
-            "gradient_direction", "gradient_theme"
+            "gradient_direction", "gradient_theme",
         ]
-        read_only_fields = ["id", "created_at", "author", "top_image_url", "bottom_image_url"]
+        read_only_fields = [
+            "id", "created_at", "author",
+            "top_image_url", "bottom_image_url"
+        ]
 
     def get_top_image_url(self, obj):
-        return obj.top_image.url if obj.top_image and obj.top_image.url else None
+        return getattr(obj.top_image, "url", None)
 
     def get_bottom_image_url(self, obj):
-        return obj.bottom_image.url if obj.bottom_image and obj.bottom_image.url else None
+        return getattr(obj.bottom_image, "url", None)
 
     def validate(self, data):
         bottom_type = data.get("bottom_type")
 
-        if bottom_type == "image":
-            if not data.get("bottom_image"):
-                raise serializers.ValidationError({
-                    "bottom_image": "Dla typu 'image' wymagane jest pole bottom_image."
-                })
+        if bottom_type == "image" and not data.get("bottom_image"):
+            raise serializers.ValidationError({
+                "bottom_image": "Dla typu 'image' wymagane jest pole bottom_image."
+            })
 
-        elif bottom_type == "color":
-            if not data.get("bottom_color"):
-                raise serializers.ValidationError({
-                    "bottom_color": "Dla typu 'color' wymagane jest pole bottom_color."
-                })
+        if bottom_type == "color" and not data.get("bottom_color"):
+            raise serializers.ValidationError({
+                "bottom_color": "Dla typu 'color' wymagane jest pole bottom_color."
+            })
 
-        elif bottom_type == "gradient":
+        if bottom_type == "gradient":
             missing = []
             if not data.get("gradient_start_color"):
                 missing.append("gradient_start_color")
@@ -81,11 +124,10 @@ class CalendarSerializer(serializers.ModelSerializer):
                     field: "To pole jest wymagane dla gradientu." for field in missing
                 })
 
-        elif bottom_type == "theme-gradient":
-            if not data.get("gradient_theme"):
-                raise serializers.ValidationError({
-                    "gradient_theme": "Dla themed gradient wymagane jest gradient_theme."
-                })
+        if bottom_type == "theme-gradient" and not data.get("gradient_theme"):
+            raise serializers.ValidationError({
+                "gradient_theme": "Dla themed gradient wymagane jest gradient_theme."
+            })
 
         return data
 
