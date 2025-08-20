@@ -32,6 +32,9 @@ class GeneratedImage(models.Model):
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
 
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -60,22 +63,10 @@ class Calendar(models.Model):
     field3_object_id = models.PositiveIntegerField(null=True, blank=True)
     field3 = GenericForeignKey("field3_content_type", "field3_object_id")
 
-    # Dolna część kalendarza
-    BOTTOM_TYPE_CHOICES = [
-        ("image", "Image"),
-        ("color", "Color"),
-        ("gradient", "Gradient"),
-        ("theme-gradient", "Theme Gradient"),
-    ]
-    bottom_type = models.CharField(max_length=20, choices=BOTTOM_TYPE_CHOICES)
-
-    bottom_image = models.ForeignKey('GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_bottom_image")
-    bottom_color = models.CharField(max_length=7, blank=True, null=True)  
-
-    gradient_start_color = models.CharField(max_length=7, blank=True, null=True)
-    gradient_end_color = models.CharField(max_length=7, blank=True, null=True)
-    gradient_direction = models.CharField(max_length=20, blank=True, null=True)  
-    gradient_theme = models.CharField(max_length=50, blank=True, null=True)  
+    # Dolna część kalendarza (GenericForeignKey zamiast kilku pól)
+    bottom_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    bottom_object_id = models.PositiveIntegerField(null=True, blank=True)
+    bottom = GenericForeignKey("bottom_content_type", "bottom_object_id")
 
 
 class CalendarMonthFieldText(models.Model):
@@ -96,6 +87,23 @@ class CalendarMonthFieldImage(models.Model):
 
 
 
+class BottomImage(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    image = models.ForeignKey('GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True)
+
+class BottomColor(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    color = models.CharField(max_length=7)
+
+class BottomGradient(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    start_color = models.CharField(max_length=7)
+    end_color = models.CharField(max_length=7)
+    direction = models.CharField(max_length=20, blank=True, null=True)
+    theme = models.CharField(max_length=50, blank=True, null=True)
 
 
 
