@@ -138,6 +138,9 @@ class GenerateImage(generics.ListCreateAPIView):
         return GeneratedImage.objects.all().order_by('-created_at')
 
 
+import json
+from django.contrib.contenttypes.models import ContentType
+
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
@@ -146,26 +149,89 @@ class CalendarCreateView(generics.ListCreateAPIView):
         return Calendar.objects.filter(author=self.request.user).order_by("-created_at")
 
     def perform_create(self, serializer):
-        """
-        Tworzymy kalendarz i automatycznie dodajemy 2 pola tekstowe i 1 obrazek.
-        """
-        # serializer.save(author=self.request.user)
-        print("Calendar created:", serializer.data)
-        
-    def list(self, request, *args, **kwargs):
-        """
-        Nadpisujemy `list`, żeby dodać `generated_images` do odpowiedzi.
-        """
-        calendars = self.get_queryset()
-        calendar_serializer = self.get_serializer(calendars, many=True)
+        data = self.request.data
+        user = self.request.user
 
-        generated_images = GeneratedImage.objects.filter(author=request.user)
-        generated_serializer = GenerateImageSerializer(generated_images, many=True)
+        # --- 1. Tworzymy CalendarYearData ---
+        year_data = CalendarYearData.objects.create(
+            author=user,
+            text=data.get("yearText"),
+            font=data.get("yearFontFamily"),
+            weight=data.get("yearFontWeight"),
+            size=str(data.get("yearFontSize")),
+            color=data.get("yearColor"),
+            position=json.dumps(data.get("yearPosition"))  # zapisujesz jako JSON
+        )
 
-        return response.Response({
-            "calendars": calendar_serializer.data,
-            "generated_images": generated_serializer.data,
-        })
+        # --- 2. Obsługa dolnej sekcji ---
+        bottom_instance = None
+        bottom_ct = None
+        bottom_type = data.get("bottom_type")
+
+        if bottom_type == "gradient":
+            bottom_instance = BottomGradient.objects.create(
+                author=user,
+                start_color=data.get("gradient_start_color"),
+                end_color=data.get("gradient_end_color"),
+                direction=data.get("gradient_direction"),
+                theme=data.get("gradient_theme")
+            )
+            bottom_ct = ContentType.objects.get_for_model(BottomGradient)
+
+        elif bottom_type == "image":
+            bottom_instance = BottomImage.objects.create(
+                author=user,
+                image_id=data.get("bottom_image")  # front powinien dawać ID wygenerowanego obrazu
+            )
+            bottom_ct = ContentType.objects.get_for_model(BottomImage)
+
+        elif bottom_type == "color":
+            bottom_instance = BottomColor.objects.create(
+                author=user,
+                color=data.get("bottom_color")
+            )
+            bottom_ct = ContentType.objects.get_for_model(BottomColor)
+
+        # --- 3. Tworzymy Calendar (bez jeszcze field1/2/3) ---
+        calendar = serializer.save(
+            author=user,
+            year_data=year_data,
+            bottom_content_type=bottom_ct,
+            bottom_object_id=bottom_instance.id if bottom_instance else None,
+        )
+
+        # --- 4. Obsługa field1/2/3 ---
+        for i in range(1, 4):
+            field_key = f"field{i}"
+            items = data.get(field_key, [])
+            for item in items:
+                if "text" in item:
+                    field_obj = CalendarMonthFieldText.objects.create(
+                        author=user,
+                        text=item["text"],
+                        font=item.get("font", {}).get("fontFamily"),
+                        weight=item.get("font", {}).get("fontWeight"),
+                        # opcjonalnie możesz zapisać kolor jako dodatkowe pole
+                    )
+                elif "image" in item:
+                    field_obj = CalendarMonthFieldImage.objects.create(
+                        author=user,
+                        path=item["image"],  # tu trzeba obsłużyć blob/url upload
+                        size=item.get("scale"),
+                        position=json.dumps(item.get("position")),
+                    )
+                else:
+                    continue  # jeśli nie ma text ani image, ignorujemy
+
+                # przypisanie do pola w Calendar
+                ct = ContentType.objects.get_for_model(field_obj)
+                setattr(calendar, f"{field_key}_content_type", ct)
+                setattr(calendar, f"{field_key}_object_id", field_obj.id)
+                calendar.save()
+
+        print("Calendar created:", calendar.id)
+        print("Payload:", data)
+
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
     queryset = OutpaintingSDXL.objects.all()
