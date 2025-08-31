@@ -149,8 +149,9 @@ class CalendarCreateView(generics.ListCreateAPIView):
         """
         Tworzymy kalendarz i automatycznie dodajemy 2 pola tekstowe i 1 obrazek.
         """
-        serializer.save(author=self.request.user)
+        # serializer.save(author=self.request.user)
         print("Calendar created:", serializer.data)
+        
     def list(self, request, *args, **kwargs):
         """
         Nadpisujemy `list`, żeby dodać `generated_images` do odpowiedzi.
