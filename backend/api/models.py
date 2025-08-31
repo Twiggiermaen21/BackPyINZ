@@ -78,7 +78,8 @@ class CalendarMonthFieldImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     path = models.CharField(max_length=500)  
-    position = models.CharField(max_length=50, blank=True, null=True)
+    positionX = models.CharField(max_length=50, blank=True, null=True)
+    positionY = models.CharField(max_length=50, blank=True, null=True)
     size = models.PositiveIntegerField(blank=True, null=True)  
 
 class CalendarYearData(models.Model):
@@ -89,8 +90,8 @@ class CalendarYearData(models.Model):
     weight = models.CharField(max_length=50, blank=True, null=True)
     size = models.CharField(max_length=20, blank=True, null=True)
     color = models.CharField(max_length=7, blank=True, null=True)
-    position = models.CharField(max_length=50, blank=True, null=True)
-
+    positionX = models.CharField(max_length=50, blank=True, null=True)
+    positionY = models.CharField(max_length=50, blank=True, null=True)
 
 class BottomImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)

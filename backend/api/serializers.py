@@ -43,13 +43,13 @@ class CalendarMonthFieldTextSerializer(serializers.ModelSerializer):
 class CalendarMonthFieldImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = CalendarMonthFieldImage
-        fields = ["id", "created_at", "author", "path", "position", "size"]
+        fields = ["id", "created_at", "author", "path", "positionX", "positionY", "size"]
         read_only_fields = ["id", "created_at", "author"]
 
 class CalendarYearDataSerializer(serializers.ModelSerializer):
     class Meta:
         model = CalendarYearData
-        fields = ["id", "text", "font", "weight", "size", "color", "position"]
+        fields = ["id", "text", "font", "weight", "size", "color", "positionX", "positionY"]
         read_only_fields = ["id", "created_at", "author"]
 
 class BottomImageSerializer(serializers.ModelSerializer):

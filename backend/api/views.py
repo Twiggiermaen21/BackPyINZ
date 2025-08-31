@@ -146,39 +146,43 @@ class CalendarCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Calendar.objects.filter(author=self.request.user).order_by("-created_at")
-
+        return (
+            Calendar.objects.filter(author=self.request.user)
+            .select_related(
+                "year_data",   # OneToOneField
+                "top_image",   # ForeignKey
+            )
+            .prefetch_related(
+                "field1",
+                "field2",
+                "field3",
+                "bottom",
+            )
+            .order_by("-created_at")
+        )
     def perform_create(self, serializer):
         data = self.request.data
         user = self.request.user
 
         # --- 1. Tworzymy CalendarYearData ---
-        year_data = CalendarYearData.objects.create(
-            author=user,
-            text=data.get("yearText"),
-            font=data.get("yearFontFamily"),
-            weight=data.get("yearFontWeight"),
-            size=str(data.get("yearFontSize")),
-            color=data.get("yearColor"),
-            position=json.dumps(data.get("yearPosition"))  # zapisujesz jako JSON
-        )
+        year_data = None
+        if data.get("yearText"):  # jeśli yearText istnieje i nie jest pusty
+            year_data = CalendarYearData.objects.create(
+                author=user,
+                text=data.get("yearText"),
+                font=data.get("yearFontFamily"),
+                weight=data.get("yearFontWeight"),
+                size=str(data.get("yearFontSize")) if data.get("yearFontSize") else None,
+                color=data.get("yearColor"),
+                positionX=data.get("yearPositionX"),
+                positionY=data.get("yearPositionY")
+            )
 
         # --- 2. Obsługa dolnej sekcji ---
         bottom_instance = None
         bottom_ct = None
         bottom_type = data.get("bottom_type")
-
-        if bottom_type == "gradient":
-            bottom_instance = BottomGradient.objects.create(
-                author=user,
-                start_color=data.get("gradient_start_color"),
-                end_color=data.get("gradient_end_color"),
-                direction=data.get("gradient_direction"),
-                theme=data.get("gradient_theme")
-            )
-            bottom_ct = ContentType.objects.get_for_model(BottomGradient)
-
-        elif bottom_type == "image":
+        if bottom_type == "image":
             bottom_instance = BottomImage.objects.create(
                 author=user,
                 image_id=data.get("bottom_image")  # front powinien dawać ID wygenerowanego obrazu
@@ -191,6 +195,17 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 color=data.get("bottom_color")
             )
             bottom_ct = ContentType.objects.get_for_model(BottomColor)
+
+        else:  # wszystko inne traktujemy jako gradient
+            bottom_instance = BottomGradient.objects.create(
+                author=user,
+                start_color=data.get("gradient_start_color"),
+                end_color=data.get("gradient_end_color"),
+                direction=data.get("gradient_direction"),
+                theme=data.get("gradient_theme")
+            )
+            bottom_ct = ContentType.objects.get_for_model(BottomGradient)
+
 
         # --- 3. Tworzymy Calendar (bez jeszcze field1/2/3) ---
         calendar = serializer.save(
@@ -231,6 +246,34 @@ class CalendarCreateView(generics.ListCreateAPIView):
 
         print("Calendar created:", calendar.id)
         print("Payload:", data)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
