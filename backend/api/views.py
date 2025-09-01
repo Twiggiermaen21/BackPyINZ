@@ -228,7 +228,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
         if bottom_type == "image":
             bottom_instance = BottomImage.objects.create(
                 author=user,
-                image_id=data.get("bottom_image")  # front powinien dawać ID wygenerowanego obrazu
+                image_id=data.get("bottom_image")  
             )
             bottom_ct = ContentType.objects.get_for_model(BottomImage)
 
@@ -276,7 +276,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         author=user,
                         path=item["image"],  # tu trzeba obsłużyć blob/url upload
                         size=item.get("scale"),
-                        position=json.dumps(item.get("position")),
+                        positionX=item.get("positionX"),
+                        positionY=item.get("positionY")
                     )
                 else:
                     continue  # jeśli nie ma text ani image, ignorujemy
