@@ -109,6 +109,7 @@ class BottomGradient(models.Model):
     start_color = models.CharField(max_length=7)
     end_color = models.CharField(max_length=7)
     direction = models.CharField(max_length=20, blank=True, null=True)
+    strength = models.CharField(max_length=50, blank=True, null=True)
     theme = models.CharField(max_length=50, blank=True, null=True)
 
 
