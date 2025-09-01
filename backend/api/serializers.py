@@ -53,33 +53,32 @@ class CalendarYearDataSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "author"]
 
 class BottomImageSerializer(serializers.ModelSerializer):
-    image_url = serializers.SerializerMethodField()
-
     class Meta:
         model = BottomImage
-        fields = ["id", "image", "image_url"]
-
-    def get_image_url(self, obj):
-        return getattr(obj.image, "url", None)
-
+        fields = ["id", "created_at", "author", "image"]
+        read_only_fields = ["id", "created_at", "author"]
 
 class BottomColorSerializer(serializers.ModelSerializer):
     class Meta:
         model = BottomColor
-        fields = ["id", "color"]
-
+        fields = ["id", "created_at", "author", "color"]
+        read_only_fields = ["id", "created_at", "author"]
 
 class BottomGradientSerializer(serializers.ModelSerializer):
     class Meta:
         model = BottomGradient
-        fields = ["id", "start_color", "end_color", "direction", "theme"]
+        fields = ["id", "created_at", "author", "start_color", "end_color", "direction", "theme"]
+        read_only_fields = ["id", "created_at", "author"]
 
         
 
 class CalendarSerializer(serializers.ModelSerializer):
-    top_image_url = serializers.SerializerMethodField()
-    year_data = CalendarYearDataSerializer(read_only=True)
+    year_data = serializers.SerializerMethodField()
+    field1 = serializers.SerializerMethodField()
+    field2 = serializers.SerializerMethodField()
+    field3 = serializers.SerializerMethodField()
     bottom = serializers.SerializerMethodField()
+    top_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Calendar
@@ -87,22 +86,88 @@ class CalendarSerializer(serializers.ModelSerializer):
             "id", "created_at", "author",
             "top_image", "top_image_url",
             "year_data",
-            "field1_object_id", "field2_object_id", "field3_object_id",
-            "bottom_content_type", "bottom_object_id", "bottom",
+            "field1", "field2", "field3",
+            "bottom",
         ]
-        read_only_fields = ["id", "created_at", "author", "top_image_url", "bottom"]
+        read_only_fields = ["id", "created_at", "top_image_url"]
 
+    # --- Top image url ---
     def get_top_image_url(self, obj):
         return getattr(obj.top_image, "url", None)
 
-    def get_bottom(self, obj):
-        if isinstance(obj.bottom, BottomImage):
-            return BottomImageSerializer(obj.bottom).data
-        elif isinstance(obj.bottom, BottomColor):
-            return BottomColorSerializer(obj.bottom).data
-        elif isinstance(obj.bottom, BottomGradient):
-            return BottomGradientSerializer(obj.bottom).data
+    # --- Year data ---
+    def get_year_data(self, obj):
+        if obj.year_data:
+            return {
+                "id": obj.year_data.id,
+                "text": obj.year_data.text,
+                "font": obj.year_data.font,
+                "weight": obj.year_data.weight,
+                "size": obj.year_data.size,
+                "color": obj.year_data.color,
+                "positionX": getattr(obj.year_data, "positionX", None),
+                "positionY": getattr(obj.year_data, "positionY", None),
+            }
         return None
+
+    # --- Pomocnik do serializacji field ---
+    def serialize_field(self, instance):
+        if not instance:
+            return []
+
+        def serialize_single(item):
+            if isinstance(item, CalendarMonthFieldText):
+                data = CalendarMonthFieldTextSerializer(item).data
+            elif isinstance(item, CalendarMonthFieldImage):
+                data = CalendarMonthFieldImageSerializer(item).data
+            else:
+                return None
+
+            # dodajemy content_type i id
+            data.update({
+                "content_type_id": ContentType.objects.get_for_model(item).id,
+               
+            })
+            return data
+
+        # lista / QuerySet
+        if isinstance(instance, (list, tuple)):
+            return [serialize_single(item) for item in instance]
+
+        # pojedynczy obiekt
+        return serialize_single(instance)
+
+    # --- Pola field1 / field2 / field3 ---
+    def get_field1(self, obj):
+        return self.serialize_field(getattr(obj, "prefetched_field1", None))
+
+    def get_field2(self, obj):
+        return self.serialize_field(getattr(obj, "prefetched_field2", None))
+
+    def get_field3(self, obj):
+        return self.serialize_field(getattr(obj, "prefetched_field3", None))
+
+    # --- Bottom ---
+    def get_bottom(self, obj):
+        instance = getattr(obj, "bottom", None)
+        if not instance:
+            return None
+
+        if isinstance(instance, BottomImage):
+            data = BottomImageSerializer(instance).data
+        elif isinstance(instance, BottomColor):
+            data = BottomColorSerializer(instance).data
+        elif isinstance(instance, BottomGradient):
+            data = BottomGradientSerializer(instance).data
+        else:
+            return None
+
+        # content_type i id
+        data.update({
+            "content_type_id": ContentType.objects.get_for_model(instance).id,
+            
+        })
+        return data
 
 
 class OutpaintingSDXLSerializer(serializers.ModelSerializer):

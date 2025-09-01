@@ -2,7 +2,8 @@
 from fileinput import filename
 from django.contrib.auth.models import User
 from rest_framework import generics,response,status
-
+from django.contrib.contenttypes.models import ContentType
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated,  AllowAny
 
@@ -145,21 +146,63 @@ class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
 
+
+
     def get_queryset(self):
-        return (
-            Calendar.objects.filter(author=self.request.user)
-            .select_related(
-                "year_data",   # OneToOneField
-                "top_image",   # ForeignKey
-            )
-            .prefetch_related(
+        # select_related dla zwykłych FK/OneToOne
+        qs = Calendar.objects.filter(author=self.request.user).select_related(
+            "top_image",
+            "year_data",
+            "field1_content_type",
+            "field2_content_type",
+            "field3_content_type",
+            "bottom_content_type",
+        ).order_by("-created_at")
+
+        # prefetch dla GenericForeignKey
+        # field1
+        field1_qs = CalendarMonthFieldText.objects.all()  # lub inny model, zależnie od typu
+        qs = qs.prefetch_related(
+            Prefetch(
                 "field1",
-                "field2",
-                "field3",
-                "bottom",
+                queryset=field1_qs,
+                to_attr="prefetched_field1"
             )
-            .order_by("-created_at")
         )
+
+        # field2
+        field2_qs = CalendarMonthFieldImage.objects.all()
+        qs = qs.prefetch_related(
+            Prefetch(
+                "field2",
+                queryset=field2_qs,
+                to_attr="prefetched_field2"
+            )
+        )
+
+        # field3
+        field3_qs = CalendarMonthFieldText.objects.all()
+        qs = qs.prefetch_related(
+            Prefetch(
+                "field3",
+                queryset=field3_qs,
+                to_attr="prefetched_field3"
+            )
+        )
+
+        # bottom (może być BottomImage, BottomColor lub BottomGradient)
+        bottom_models = [BottomImage, BottomColor, BottomGradient]
+        for model in bottom_models:
+            qs = qs.prefetch_related(
+                Prefetch(
+                    "bottom",
+                    queryset=model.objects.all(),
+                    to_attr=f"prefetched_bottom_{model.__name__}"
+                )
+            )
+
+        return qs
+
     def perform_create(self, serializer):
         data = self.request.data
         user = self.request.user
