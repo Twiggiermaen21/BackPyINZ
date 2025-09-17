@@ -16,8 +16,8 @@ from .utils.generation import generate_image_from_prompt
 from .utils.upscaling import upscale_image_with_bigjpg
 from .utils.cloudinary_upload import upload_image
 import os
-from PIL import Image
-
+import json
+from django.contrib.contenttypes.models import ContentType
 from dotenv import load_dotenv
 from rest_framework.exceptions import ValidationError
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -147,10 +147,6 @@ class GenerateImage(generics.ListCreateAPIView):
         }, status=status.HTTP_201_CREATED)
     def get_queryset(self):
         return GeneratedImage.objects.all().order_by('-created_at')
-
-
-import json
-from django.contrib.contenttypes.models import ContentType
 
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
