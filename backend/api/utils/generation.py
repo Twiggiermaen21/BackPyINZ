@@ -31,8 +31,8 @@ def generate_image_from_prompt(base_prompt, width, height,
 
     if not detailed_prompt:
         raise ValueError("Failed to get detailed prompt.")
-    image_path = generate_image(client, detailed_prompt, width, height)
+    image_bytes = generate_image(client, detailed_prompt, width, height)
 
-    if not image_path:
+    if not image_bytes:
         raise ValueError("Failed to generate image.")
-    return image_path
+    return image_bytes

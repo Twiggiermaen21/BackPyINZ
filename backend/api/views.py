@@ -1,5 +1,6 @@
 
 from fileinput import filename
+import uuid
 from django.contrib.auth.models import User
 from httpcore import request
 from rest_framework import generics,response,status
@@ -85,7 +86,7 @@ class GenerateImage(generics.ListCreateAPIView):
             raise ValueError(f"Invalid ID in one of the foreign keys: {e}")
 
         try:
-            image_path = generate_image_from_prompt(
+            image_bytes = generate_image_from_prompt(
                 base_prompt=prompt,
                 width=width,
                 height=height,
@@ -100,10 +101,16 @@ class GenerateImage(generics.ListCreateAPIView):
                 realizm=realizm.nazwa if realizm else None,
                 styl_narracyjny=styl_narracyjny.nazwa if styl_narracyjny else None
             )
-            generated_url = upload_image(image_path, "generated_images", os.path.basename(image_path))
-            filename = os.path.basename(image_path)
-            input_path = os.path.join(BASE_DIR, "backend", "images", filename)
-            output_path = os.path.join(BASE_DIR, "backend", "images", f"extended_{filename}")
+
+            filename = f"generated_{uuid.uuid4().hex}.png"
+            generated_url = upload_image(
+                            image_bytes,                     # bytes obrazu
+                            "generated_images",
+                            filename                           # nazwa pliku w Cloudinary
+                        )
+            # filename = os.path.basename(image_path)
+            # input_path = os.path.join(BASE_DIR, "backend", "images", filename)
+            # output_path = os.path.join(BASE_DIR, "backend", "images", f"extended_{filename}")
         except Exception as e:
             raise Exception(f"Image generation failed: {e}")
 
@@ -216,40 +223,37 @@ class CalendarCreateView(generics.ListCreateAPIView):
         top_image_value = serializer.validated_data.get("top_image")
 
         if image_from_disk:
-            if hasattr(top_image_value, "read"):  # plik UploadedFile
-                print("Saving uploaded file to disk...")
-                save_dir = os.path.join(settings.MEDIA_ROOT, "images")
-                os.makedirs(save_dir, exist_ok=True)
+            if image_from_disk:
+                if hasattr(top_image_value, "read"):  # UploadedFile
+                    # odczyt obrazu bez zapisu na dysku
+                    file_bytes = top_image_value.read()
+                    filename = f"generated_{uuid.uuid4().hex}.png"
+                    # odczyt wymiarów z pamięci
+                    from PIL import Image
+                    import io
 
-                # pełna ścieżka do pliku
-                save_path = os.path.join(save_dir, top_image_value.name)
+                    with Image.open(io.BytesIO(file_bytes)) as img:
+                        width, height = img.size
+                        print(f"Wymiary obrazu: {width}x{height}")
 
-                # zapis pliku na dysku
-                with open(save_path, "wb+") as f:
-                    for chunk in top_image_value.chunks():
-                        f.write(chunk)
-                with Image.open(save_path) as img:
-                    width, height = img.size
-                    print(f"Wymiary obrazu: {width}x{height}")
-                # <<< NOWA CZĘŚĆ: upload do storage >>>
-                generated_url = upload_image(
-                    save_path,                      # lokalna ścieżka do pliku
-                    "generated_images",             # np. folder/bucket
-                    os.path.basename(save_path)     # nazwa pliku
-                )
-                print("Uploaded image, URL:", generated_url)
+                    # upload bezpośrednio z pamięci
+                    generated_url = upload_image(
+                        file_bytes,                    # bytes zamiast ścieżki
+                        "generated_images",
+                        filename
+                    )
+                    print("Uploaded image, URL:", generated_url)
 
-                # Możesz np. zapisać URL w modelu GeneratedImage
-                image_instance = GeneratedImage.objects.create(
-                    author=user,
-                    width=width,
-                    height=height,
-                    url=generated_url     # zakładając, że masz pole `url` w modelu
-                )
-                top_image_value = image_instance
-
-            else:
-                raise ValidationError({"top_image": "Niepoprawny plik"})
+                    # zapis w DB
+                    image_instance = GeneratedImage.objects.create(
+                        author=user,
+                        width=width,
+                        height=height,
+                        url=generated_url
+                    )
+                    top_image_value = image_instance
+                else:
+                    raise ValidationError({"top_image": "Niepoprawny plik"})
         else:
             # Pobieramy istniejący GeneratedImage po ID
             try:
