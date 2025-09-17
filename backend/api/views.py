@@ -1,12 +1,13 @@
 
 from fileinput import filename
 from django.contrib.auth.models import User
+from httpcore import request
 from rest_framework import generics,response,status
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated,  AllowAny
-
+from django.conf import settings
 from .utils.bottom import extend_to_aspect_31x81
 from .models import *
 from .serializers import *
@@ -15,7 +16,7 @@ from .utils.upscaling import upscale_image_with_bigjpg
 from .utils.cloudinary_upload import upload_image
 import os
 from dotenv import load_dotenv
-
+from rest_framework.exceptions import ValidationError
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
@@ -206,10 +207,46 @@ class CalendarCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         data = self.request.data
         user = self.request.user
+        print("Creating Calendar with data:", data)
+        
+        image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
+
+        top_image_value = serializer.validated_data.get("top_image")
+
+        if image_from_disk:
+            if hasattr(top_image_value, "read"):  # plik UploadedFile
+                # Tworzymy nowy GeneratedImage
+                # image_instance = GeneratedImage.objects.create(
+                #     author=user,
+                #     file=top_image_value  # pole ImageField w GeneratedImage
+                # )
+                # top_image_value = image_instance
+                print("Saving uploaded file to disk...")
+                save_dir = os.path.join(settings.MEDIA_ROOT, "images")
+                os.makedirs(save_dir, exist_ok=True)
+                
+                # pełna ścieżka do pliku
+                save_path = os.path.join(save_dir, top_image_value.name)
+                
+                # zapis pliku na dysku
+                with open(save_path, "wb+") as f:
+                    for chunk in top_image_value.chunks():
+                        f.write(chunk)
+                
+
+            else:
+                raise ValidationError({"top_image": "Niepoprawny plik"})
+        else:
+            # Pobieramy istniejący GeneratedImage po ID
+            try:
+                image_instance = GeneratedImage.objects.get(id=top_image_value)
+                top_image_value = image_instance
+            except GeneratedImage.DoesNotExist:
+                raise ValidationError({"top_image": "Nie znaleziono obrazu o podanym ID"})
 
         # --- 1. Tworzymy CalendarYearData ---
         year_data = None
-        if data.get("yearText"):  # jeśli yearText istnieje i nie jest pusty
+        if data.get("yearText"):
             year_data = CalendarYearData.objects.create(
                 author=user,
                 text=data.get("yearText"),
@@ -228,18 +265,16 @@ class CalendarCreateView(generics.ListCreateAPIView):
         if bottom_type == "image":
             bottom_instance = BottomImage.objects.create(
                 author=user,
-                image_id=data.get("bottom_image")  
+                image_id=data.get("bottom_image")
             )
             bottom_ct = ContentType.objects.get_for_model(BottomImage)
-
         elif bottom_type == "color":
             bottom_instance = BottomColor.objects.create(
                 author=user,
                 color=data.get("bottom_color")
             )
             bottom_ct = ContentType.objects.get_for_model(BottomColor)
-
-        else:  # wszystko inne traktujemy jako gradient
+        else:
             bottom_instance = BottomGradient.objects.create(
                 author=user,
                 start_color=data.get("gradient_start_color"),
@@ -249,11 +284,11 @@ class CalendarCreateView(generics.ListCreateAPIView):
             )
             bottom_ct = ContentType.objects.get_for_model(BottomGradient)
 
-
-        # --- 3. Tworzymy Calendar (bez jeszcze field1/2/3) ---
+        # --- 3. Tworzymy Calendar ---
         calendar = serializer.save(
             author=user,
             year_data=year_data,
+            top_image=top_image_value,
             bottom_content_type=bottom_ct,
             bottom_object_id=bottom_instance.id if bottom_instance else None,
         )
@@ -261,28 +296,32 @@ class CalendarCreateView(generics.ListCreateAPIView):
         # --- 4. Obsługa field1/2/3 ---
         for i in range(1, 4):
             field_key = f"field{i}"
-            items = data.get(field_key, [])
+            items = data.getlist(field_key) if hasattr(data, "getlist") else data.get(field_key, [])
             for item in items:
+                if isinstance(item, str):
+                    try:
+                        item = json.loads(item)  # bo FormData w axios może wysłać jako string
+                    except Exception:
+                        continue
+
                 if "text" in item:
                     field_obj = CalendarMonthFieldText.objects.create(
                         author=user,
                         text=item["text"],
                         font=item.get("font", {}).get("fontFamily"),
                         weight=item.get("font", {}).get("fontWeight"),
-                        # opcjonalnie możesz zapisać kolor jako dodatkowe pole
                     )
                 elif "image" in item:
                     field_obj = CalendarMonthFieldImage.objects.create(
                         author=user,
-                        path=item["image"],  # tu trzeba obsłużyć blob/url upload
+                        path=item["image"],
                         size=item.get("scale"),
                         positionX=item.get("positionX"),
                         positionY=item.get("positionY")
                     )
                 else:
-                    continue  # jeśli nie ma text ani image, ignorujemy
+                    continue
 
-                # przypisanie do pola w Calendar
                 ct = ContentType.objects.get_for_model(field_obj)
                 setattr(calendar, f"{field_key}_content_type", ct)
                 setattr(calendar, f"{field_key}_object_id", field_obj.id)
@@ -290,8 +329,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
 
         print("Calendar created:", calendar.id)
         print("Payload:", data)
-
-
 
 
 

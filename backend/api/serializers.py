@@ -70,30 +70,52 @@ class BottomGradientSerializer(serializers.ModelSerializer):
         fields = ["id", "created_at", "author", "start_color", "end_color", "direction", "strength", "theme"]
         read_only_fields = ["id", "created_at", "author"]
 
-        
+class TopImageField(serializers.Field):
+    """
+    Pole, które przyjmuje:
+    - Plik (UploadedFile)
+    - ID istniejącego obrazka (string/int)
+    """
+
+    def to_internal_value(self, data):
+        if hasattr(data, "read"):
+            # to jest plik
+            return data
+        # traktujemy jako ID
+        return str(data)
+
+    def to_representation(self, value):
+        try:
+            # jeśli jest plikiem ImageField w modelu, zwracamy URL
+            return value.url
+        except Exception:
+            # jeśli ID lub string
+            return value        
 
 class CalendarSerializer(serializers.ModelSerializer):
+    top_image = TopImageField(required=False, allow_null=True)
+    top_image_url = serializers.SerializerMethodField()
     year_data = serializers.SerializerMethodField()
     field1 = serializers.SerializerMethodField()
     field2 = serializers.SerializerMethodField()
     field3 = serializers.SerializerMethodField()
     bottom = serializers.SerializerMethodField()
-    top_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Calendar
         fields = [
             "id", "created_at", "author",
             "top_image", "top_image_url",
-            "year_data",
-            "field1", "field2", "field3",
+            "year_data", "field1", "field2", "field3",
             "bottom",
         ]
         read_only_fields = ["id", "created_at", "top_image_url"]
 
-    # --- Top image url ---
+    # --- Top image URL ---
     def get_top_image_url(self, obj):
-        return getattr(obj.top_image, "url", None)
+        if hasattr(obj.top_image, "url"):
+            return obj.top_image.url
+        return None
 
     # --- Year data ---
     def get_year_data(self, obj):
@@ -122,19 +144,13 @@ class CalendarSerializer(serializers.ModelSerializer):
                 data = CalendarMonthFieldImageSerializer(item).data
             else:
                 return None
-
-            # dodajemy content_type i id
             data.update({
                 "content_type_id": ContentType.objects.get_for_model(item).id,
-               
             })
             return data
 
-        # lista / QuerySet
         if isinstance(instance, (list, tuple)):
             return [serialize_single(item) for item in instance]
-
-        # pojedynczy obiekt
         return serialize_single(instance)
 
     # --- Pola field1 / field2 / field3 ---
@@ -162,10 +178,8 @@ class CalendarSerializer(serializers.ModelSerializer):
         else:
             return None
 
-        # content_type i id
         data.update({
             "content_type_id": ContentType.objects.get_for_model(instance).id,
-            
         })
         return data
 
