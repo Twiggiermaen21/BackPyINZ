@@ -15,6 +15,8 @@ from .utils.generation import generate_image_from_prompt
 from .utils.upscaling import upscale_image_with_bigjpg
 from .utils.cloudinary_upload import upload_image
 import os
+from PIL import Image
+
 from dotenv import load_dotenv
 from rest_framework.exceptions import ValidationError
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -215,24 +217,36 @@ class CalendarCreateView(generics.ListCreateAPIView):
 
         if image_from_disk:
             if hasattr(top_image_value, "read"):  # plik UploadedFile
-                # Tworzymy nowy GeneratedImage
-                # image_instance = GeneratedImage.objects.create(
-                #     author=user,
-                #     file=top_image_value  # pole ImageField w GeneratedImage
-                # )
-                # top_image_value = image_instance
                 print("Saving uploaded file to disk...")
                 save_dir = os.path.join(settings.MEDIA_ROOT, "images")
                 os.makedirs(save_dir, exist_ok=True)
-                
+
                 # pełna ścieżka do pliku
                 save_path = os.path.join(save_dir, top_image_value.name)
-                
+
                 # zapis pliku na dysku
                 with open(save_path, "wb+") as f:
                     for chunk in top_image_value.chunks():
                         f.write(chunk)
-                
+                with Image.open(save_path) as img:
+                    width, height = img.size
+                    print(f"Wymiary obrazu: {width}x{height}")
+                # <<< NOWA CZĘŚĆ: upload do storage >>>
+                generated_url = upload_image(
+                    save_path,                      # lokalna ścieżka do pliku
+                    "generated_images",             # np. folder/bucket
+                    os.path.basename(save_path)     # nazwa pliku
+                )
+                print("Uploaded image, URL:", generated_url)
+
+                # Możesz np. zapisać URL w modelu GeneratedImage
+                image_instance = GeneratedImage.objects.create(
+                    author=user,
+                    width=width,
+                    height=height,
+                    url=generated_url     # zakładając, że masz pole `url` w modelu
+                )
+                top_image_value = image_instance
 
             else:
                 raise ValidationError({"top_image": "Niepoprawny plik"})
