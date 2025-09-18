@@ -12,6 +12,7 @@ from django.conf import settings
 from .utils.bottom import extend_to_aspect_31x81
 from .models import *
 from .serializers import *
+from .pagination import *
 from .utils.generation import generate_image_from_prompt
 from .utils.upscaling import upscale_image_with_bigjpg
 from .utils.cloudinary_upload import upload_image
@@ -51,7 +52,7 @@ class NoteDelete(generics.DestroyAPIView):
 class GenerateImage(generics.ListCreateAPIView):
     serializer_class = GenerateImageSerializer
     permission_classes = [IsAuthenticated]
-
+    pagination_class = ImagesPagination
     def perform_create(self, serializer):
         data = self.request.data
         prompt = data.get('prompt')
@@ -151,7 +152,7 @@ class GenerateImage(generics.ListCreateAPIView):
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-
+    pagination_class = CalendarPagination 
 
 
     def get_queryset(self):
