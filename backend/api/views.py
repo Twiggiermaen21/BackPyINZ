@@ -213,7 +213,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         data = self.request.data
         user = self.request.user
-        print("Creating Calendar with data:", data)
+        
         
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 
@@ -231,7 +231,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
 
                     with Image.open(io.BytesIO(file_bytes)) as img:
                         width, height = img.size
-                        print(f"Wymiary obrazu: {width}x{height}")
+                        
 
                     # upload bezpośrednio z pamięci
                     generated_url = upload_image(
@@ -239,7 +239,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         "generated_images",
                         filename
                     )
-                    print("Uploaded image, URL:", generated_url)
+                    
 
                     # zapis w DB
                     image_instance = GeneratedImage.objects.create(
@@ -350,7 +350,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
             except json.JSONDecodeError:
                 field_dict = {}
             image_is_true = field_dict.get("image", "false").lower() == "true"
-            print("Image is true:", image_is_true)
             if image_is_true:
                 # zakładam, że w request.FILES masz plik o kluczu np. "field1_image"
                 
@@ -364,7 +363,14 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         filename
                     )
                     print("Generated image URL:", generated_url)  
+                    ImageForField.objects.create(
+                    user=self.request.user,
+                    calendar=calendar,       # Twój obiekt Calendar, który został zapisany wcześniej
+                    field_number=i,
+                    url=generated_url
+                )
 
+       
         print("Calendar created:", calendar.id)
         print("Payload:", data)
 

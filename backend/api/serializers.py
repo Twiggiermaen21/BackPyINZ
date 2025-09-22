@@ -70,6 +70,13 @@ class BottomGradientSerializer(serializers.ModelSerializer):
         fields = ["id", "created_at", "author", "start_color", "end_color", "direction", "strength", "theme"]
         read_only_fields = ["id", "created_at", "author"]
 
+
+class ImageForFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ImageForField
+        fields = ['id', 'user', 'calendar', 'field_number', 'url', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
+
 class TopImageField(serializers.Field):
     """
     Pole, które przyjmuje:

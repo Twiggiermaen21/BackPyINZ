@@ -93,7 +93,7 @@ class CalendarYearData(models.Model):
     positionX = models.CharField(max_length=50, blank=True, null=True)
     positionY = models.CharField(max_length=50, blank=True, null=True)
 
-class Image(models.Model):
+class ImageForField(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     calendar = models.ForeignKey(Calendar, on_delete=models.CASCADE)
     field_number = models.IntegerField()
