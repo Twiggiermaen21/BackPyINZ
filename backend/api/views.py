@@ -342,6 +342,29 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 setattr(calendar, f"{field_key}_object_id", field_obj.id)
                 calendar.save()
 
+
+        for i in range(1, 4): 
+            raw = data.get(f"field{i}")  # bierzemy pierwszy element listy
+            try:
+                field_dict = json.loads(raw)       # zamiana stringa JSON na dict
+            except json.JSONDecodeError:
+                field_dict = {}
+            image_is_true = field_dict.get("image", "false").lower() == "true"
+            print("Image is true:", image_is_true)
+            if image_is_true:
+                # zakładam, że w request.FILES masz plik o kluczu np. "field1_image"
+                
+                file_obj = self.request.FILES.get(f"field{i}_image")  # <- FILES, nie data
+                if file_obj:
+                    file_bytes = file_obj.read()  # to są już bajty
+                    filename = f"generated_{uuid.uuid4().hex}.png"
+                    generated_url = upload_image(
+                        file_bytes,   # używamy bytes, nie read() na bytes
+                        "generated_images",
+                        filename
+                    )
+                    print("Generated image URL:", generated_url)  
+
         print("Calendar created:", calendar.id)
         print("Payload:", data)
 
