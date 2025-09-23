@@ -107,6 +107,7 @@ class CalendarSerializer(serializers.ModelSerializer):
     field2 = serializers.SerializerMethodField()
     field3 = serializers.SerializerMethodField()
     bottom = serializers.SerializerMethodField()
+    images_for_fields = serializers.SerializerMethodField() 
 
     class Meta:
         model = Calendar
@@ -114,7 +115,7 @@ class CalendarSerializer(serializers.ModelSerializer):
             "id", "created_at", "author",
             "top_image", "top_image_url",
             "year_data", "field1", "field2", "field3",
-            "bottom",
+            "bottom","images_for_fields"
         ]
         read_only_fields = ["id", "created_at", "top_image_url"]
 
@@ -189,7 +190,9 @@ class CalendarSerializer(serializers.ModelSerializer):
             "content_type_id": ContentType.objects.get_for_model(instance).id,
         })
         return data
-
+    
+    def get_images_for_fields(self, obj):
+        return [ImageForFieldSerializer(f).data for f in getattr(obj, "prefetched_images_for_fields", [])]
 
 class OutpaintingSDXLSerializer(serializers.ModelSerializer):
     class Meta:

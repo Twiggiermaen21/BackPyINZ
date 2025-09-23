@@ -208,6 +208,16 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 )
             )
 
+
+        image_for_field_qs = ImageForField.objects.filter(user=self.request.user)
+        qs = qs.prefetch_related(
+                Prefetch(
+                    "imageforfield_set",  # reverse relacja z Calendar → ImageForField
+                    queryset=image_for_field_qs,
+                    to_attr="prefetched_images_for_fields"
+                )
+            )
+
         return qs
 
     def perform_create(self, serializer):
