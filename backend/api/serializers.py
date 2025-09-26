@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
+from django.contrib.auth import get_user_model, password_validation
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -21,6 +21,50 @@ class UserSerializer(serializers.ModelSerializer):
             password=validated_data["password"],
         )
         return user
+User = get_user_model()
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(required=True)
+
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "username"]
+
+    def validate_username(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("Nazwa użytkownika jest już zajęta.")
+        return value
+
+class EmailUpdateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError("Email już jest zajęty.")
+        return value
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Aktualne hasło jest nieprawidłowe")
+        return value
+
+    def validate_new_password(self, value):
+        password_validation.validate_password(value)
+        return value
+
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        user.set_password(self.validated_data['new_password'])
+        user.save()
+        return user
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -32,6 +76,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data.update({
             "user": {
                 "id": self.user.id,
+                "username": self.user.username,
                 "email": self.user.email,
                 "first_name": self.user.first_name,
                 "last_name": self.user.last_name,

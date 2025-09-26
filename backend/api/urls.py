@@ -8,6 +8,11 @@ path('generate/', views.GenerateImage.as_view(), name='generate-image'),
 path('generate-image-to-image-sdxl/', views.GenerateImageToImageSDXLView.as_view(), name='generate-image-to-image-sdxl'),
 path('upscale-image/', views.UpscalingView.as_view(), name='upscale-image'),
 
+    path("user/update-profile/", views.ProfileUpdateView.as_view(), name="update-profile"),
+    path("user/change-email/", views.EmailUpdateView.as_view(), name="change-email"),
+    path("user/change-password/",views.PasswordChangeView.as_view(), name="change-password"),
+
+
     path('styl-artystyczny/', views.StylArtystycznyCreate.as_view()),
     path('kompozycja/', views.KompozycjaCreate.as_view()),
     path('kolorystyka/', views.KolorystykaCreate.as_view()),

@@ -1,14 +1,12 @@
 
-# from fileinput import filename
 import uuid
 from django.contrib.auth.models import User
-# from httpcore import request
 from rest_framework import generics,response,status
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated,  AllowAny
-# from django.conf import settings
+from rest_framework_simplejwt.views import TokenObtainPairView
 # from .utils.bottom import extend_to_aspect_31x81
 from .models import *
 from .serializers import *
@@ -31,25 +29,51 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from google.oauth2 import id_token
 from google.auth.transport import requests
-# from django.shortcuts import redirect
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-# Create your views here.
 class CreateUserView(generics.ListCreateAPIView):
     queryset= User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
-
-from rest_framework_simplejwt.views import TokenObtainPairView
-
 class MyTokenObtainPairView(TokenObtainPairView): 
     serializer_class = MyTokenObtainPairSerializer
 
+class ProfileUpdateView(generics.UpdateAPIView):
+    serializer_class = ProfileUpdateSerializer
+    permission_classes = [IsAuthenticated]
 
+    def get_object(self):
+        return self.request.user
 
+class EmailUpdateView(generics.UpdateAPIView):
+    serializer_class = EmailUpdateSerializer
+    permission_classes = [IsAuthenticated]
 
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        user.email = serializer.validated_data['email']
+        user.save()
+        return response.Response({"detail": "Email został zmieniony"}, status=status.HTTP_200_OK)
+
+class PasswordChangeView(generics.UpdateAPIView):
+    serializer_class = PasswordChangeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
 
 User = get_user_model()
