@@ -1,26 +1,34 @@
 
-from fileinput import filename
+# from fileinput import filename
 import uuid
 from django.contrib.auth.models import User
-from httpcore import request
+# from httpcore import request
 from rest_framework import generics,response,status
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated,  AllowAny
-from django.conf import settings
-from .utils.bottom import extend_to_aspect_31x81
+# from django.conf import settings
+# from .utils.bottom import extend_to_aspect_31x81
 from .models import *
 from .serializers import *
 from .pagination import *
 from .utils.generation import generate_image_from_prompt
 from .utils.upscaling import upscale_image_with_bigjpg
 from .utils.cloudinary_upload import upload_image
+from rest_framework.exceptions import ValidationError
 import os
 import json
 from django.contrib.contenttypes.models import ContentType
 from dotenv import load_dotenv
-from rest_framework.exceptions import ValidationError
+from rest_framework import status
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+# from django.shortcuts import redirect
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
@@ -29,6 +37,74 @@ class CreateUserView(generics.ListCreateAPIView):
     queryset= User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+
+
+
+
+from rest_framework import status
+from google.oauth2 import id_token
+from google.auth.transport import requests
+# from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+
+@csrf_exempt
+def google_auth(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    import json
+    data = json.loads(request.body)
+    token = data.get("credential")
+
+    if not token:
+        return JsonResponse({"error": "No token provided"}, status=400)
+
+    try:
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(),  os.getenv("CLIENT_ID"))
+        email = idinfo.get("email")
+        name = idinfo.get("name", "")
+
+        if not email:
+            return JsonResponse({"error": "No email in token"}, status=400)
+
+        try:
+            # Sprawdź, czy użytkownik istnieje
+            user = User.objects.get(email=email)
+            created = False
+        except User.DoesNotExist:
+            # Jeśli nie istnieje, utwórz nowego
+            user = User.objects.create_user(
+                username=email,  # email jako username
+                email=email,
+                first_name=name.split(" ")[0] if name else "",
+                last_name=" ".join(name.split(" ")[1:]) if name and len(name.split(" ")) > 1 else ""
+            )
+            created = True
+
+        # Zaloguj użytkownika
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        return JsonResponse({
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            },
+            "token": {
+                "access": access_token,
+                "refresh": str(refresh)
+            },
+            "created": created
+        }, status=200)
+
+    except ValueError:
+        return JsonResponse({"error": "Invalid token"}, status=403)
+
 class NoteListCreate(generics.ListCreateAPIView):
     serializer_class=NoteSerializer
     permission_classes=[IsAuthenticated]
@@ -383,32 +459,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
        
         print("Calendar created:", calendar.id)
         print("Payload:", data)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
