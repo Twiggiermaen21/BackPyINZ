@@ -1,17 +1,47 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import *
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class UserSerializer (serializers.ModelSerializer):
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
-        fields =["id","username","password"]
-        extra_kwargs={"password":{"write_only":True}}
+        # dodajemy first_name i last_name
+        fields = ["id", "username", "email", "first_name", "last_name", "password"]
 
     def create(self, validated_data):
-        user=User.objects.create_user(**validated_data)
+        # tworzymy usera z dodatkowym polami first_name, last_name i email
+        user = User.objects.create_user(
+            username=validated_data["username"],
+            email=validated_data.get("email", ""),
+            first_name=validated_data.get("first_name", ""),
+            last_name=validated_data.get("last_name", ""),
+            password=validated_data["password"],
+        )
         return user
-    
+
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        print(self.user.id)
+        print(self.user.username)
+        # dodajemy własne dane usera do odpowiedzi
+        data.update({
+            "user": {
+                "id": self.user.id,
+                "email": self.user.email,
+                "first_name": self.user.first_name,
+                "last_name": self.user.last_name,
+                "photo": self.user.profile.photo.url if hasattr(self.user, 'profile') and self.user.profile.photo else None,
+            }
+        })
+
+        return data
+
+
 class NoteSerializer(serializers.ModelSerializer):
     class Meta:
             model = Note

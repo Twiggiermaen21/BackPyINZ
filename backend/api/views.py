@@ -28,6 +28,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework import status
+from google.oauth2 import id_token
+from google.auth.transport import requests
 # from django.shortcuts import redirect
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
@@ -39,17 +42,17 @@ class CreateUserView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
 
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+class MyTokenObtainPairView(TokenObtainPairView): 
+    serializer_class = MyTokenObtainPairSerializer
 
 
-from rest_framework import status
-from google.oauth2 import id_token
-from google.auth.transport import requests
-# from django.contrib.auth import get_user_model
+
+
+
 
 User = get_user_model()
-
-
-
 @csrf_exempt
 def google_auth(request):
     if request.method != "POST":
@@ -66,7 +69,7 @@ def google_auth(request):
         idinfo = id_token.verify_oauth2_token(token, requests.Request(),  os.getenv("CLIENT_ID"))
         email = idinfo.get("email")
         name = idinfo.get("name", "")
-
+        picture = idinfo.get("picture")
         if not email:
             return JsonResponse({"error": "No email in token"}, status=400)
 
@@ -94,6 +97,7 @@ def google_auth(request):
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
+                "picture": picture, 
             },
             "token": {
                 "access": access_token,
