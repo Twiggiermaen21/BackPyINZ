@@ -81,7 +81,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "first_name": self.user.first_name,
                 "last_name": self.user.last_name,
                 "photo": self.user.profile.photo.url if hasattr(self.user, 'profile') and self.user.profile.photo else None,
-            }
+            },
+            "Auth": "Database"
         })
 
         return data

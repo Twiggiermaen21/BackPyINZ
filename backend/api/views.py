@@ -127,7 +127,8 @@ def google_auth(request):
                 "access": access_token,
                 "refresh": str(refresh)
             },
-            "created": created
+            "created": created,
+            "Auth": "Google"
         }, status=200)
 
     except ValueError:
