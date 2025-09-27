@@ -31,29 +31,14 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from django.core.mail import send_mail
 from django.conf import settings
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import default_token_generator
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
 
 
-class SendEmailView(generics.GenericAPIView):
-    serializer_class = SendEmailSerializer
-    permission_classes = [AllowAny]
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data["email"]
-
-        send_mail(
-            subject="Reset hasła",
-            message="Kliknij w link aby zresetować swoje hasło.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-
-        return response.Response({"detail": "Email został wysłany"}, status=status.HTTP_200_OK)
 
 class CreateUserView(generics.ListCreateAPIView):
     queryset= User.objects.all()
@@ -97,6 +82,49 @@ class PasswordChangeView(generics.UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
+
+
+
+class PasswordResetView(generics.GenericAPIView):
+    serializer_class = PasswordResetSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return response.Response({"detail": "Email wysłany, jeśli użytkownik istnieje"}, status=200)
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        reset_link = f"http://localhost:5173/reset-password/{uid}/{token}/"
+        
+        send_mail(
+            "Reset hasła",
+            f"Kliknij w link aby zresetować hasło: {reset_link}",
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
+
+        return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        print(request.data)  # <-- sprawdź, co faktycznie przychodzi
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return response.Response({"detail": "Hasło zostało zresetowane"}, status=200)
+
 
 
 User = get_user_model()

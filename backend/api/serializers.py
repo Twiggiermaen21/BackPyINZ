@@ -1,8 +1,10 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from django.contrib.auth.tokens import default_token_generator
 from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, password_validation
+from django.utils.http import urlsafe_base64_decode
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -65,7 +67,32 @@ class PasswordChangeSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save()
         return user
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
 
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(min_length=6)
+
+    def validate(self, attrs):
+        try:
+            uid = urlsafe_base64_decode(attrs["uid"]).decode()
+            user = User.objects.get(pk=uid)
+        except Exception:
+            raise serializers.ValidationError("Nieprawidłowy link resetujący")
+
+        if not default_token_generator.check_token(user, attrs["token"]):
+            raise serializers.ValidationError("Token wygasł lub jest nieprawidłowy")
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save()
+        return user
 
 class SendEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
