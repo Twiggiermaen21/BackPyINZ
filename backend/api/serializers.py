@@ -67,6 +67,10 @@ class PasswordChangeSerializer(serializers.Serializer):
         return user
 
 
+class SendEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)

@@ -29,8 +29,31 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from google.oauth2 import id_token
 from google.auth.transport import requests
+from django.core.mail import send_mail
+from django.conf import settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
+
+
+
+class SendEmailView(generics.GenericAPIView):
+    serializer_class = SendEmailSerializer
+    permission_classes = [AllowAny]
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        send_mail(
+            subject="Reset hasła",
+            message="Kliknij w link aby zresetować swoje hasło.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+        return response.Response({"detail": "Email został wysłany"}, status=status.HTTP_200_OK)
 
 class CreateUserView(generics.ListCreateAPIView):
     queryset= User.objects.all()
