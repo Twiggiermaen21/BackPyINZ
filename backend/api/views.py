@@ -34,11 +34,35 @@ from django.conf import settings
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
+from cloudinary.uploader import destroy
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
+class UpdateProfileImageView(generics.UpdateAPIView):
+    permission_classes = [IsAuthenticated]
 
+    def put(self, request):
+        profile, _ = ProfileImage.objects.get_or_create(user=request.user)
+        new_image = request.FILES.get("profile_image")
 
+        if not new_image:
+            return response.Response({"error": "Brak pliku."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 🧹 Usunięcie starego zdjęcia z Cloudinary, jeśli istnieje
+        old_image = profile.profile_image
+        if old_image and hasattr(old_image, "public_id"):
+            try:
+                destroy(old_image.public_id)
+            except Exception as e:
+                print("⚠️ Błąd przy usuwaniu starego zdjęcia:", e)
+
+        # 📤 Zapis nowego zdjęcia — automatyczny upload do Cloudinary
+        profile.profile_image = new_image
+        profile.save()
+
+        serializer = ProfileImageSerializer(profile)
+        return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 class CreateUserView(generics.ListCreateAPIView):
     queryset= User.objects.all()
@@ -185,26 +209,6 @@ def google_auth(request):
     except ValueError:
         return JsonResponse({"error": "Invalid token"}, status=403)
 
-class NoteListCreate(generics.ListCreateAPIView):
-    serializer_class=NoteSerializer
-    permission_classes=[IsAuthenticated]
-
-    def get_queryset(self):
-        user=self.request.user
-        return Note.objects.filter(author=user)
-    
-    def perform_create(self,serializer):
-        if serializer.is_valid():
-            serializer.save(author=self.request.user)
-        else:
-            print(serializer.errors)
-class NoteDelete(generics.DestroyAPIView):
-     serializer_class=NoteSerializer
-     permission_classes=[IsAuthenticated]
-    
-     def get_queryset(self):
-        user=self.request.user
-        return Note.objects.filter(author=user) 
 class GenerateImage(generics.ListCreateAPIView):
     serializer_class = GenerateImageSerializer
     permission_classes = [IsAuthenticated]

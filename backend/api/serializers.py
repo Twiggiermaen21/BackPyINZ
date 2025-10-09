@@ -5,13 +5,25 @@ from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, password_validation
 from django.utils.http import urlsafe_base64_decode
+
+class ProfileImageSerializer(serializers.ModelSerializer):
+    profile_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProfileImage
+        fields = ["id", "profile_image", "profile_image_url"]
+
+    def get_profile_image_url(self, obj):
+        return obj.profile_image.url if obj.profile_image else None
+
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-
+    profile = ProfileImageSerializer()
     class Meta:
         model = User
         # dodajemy first_name i last_name
-        fields = ["id", "username", "email", "first_name", "last_name", "password"]
+        fields = ["id", "username", "email", "first_name", "last_name", "password", 'profile']
 
     def create(self, validated_data):
         # tworzymy usera z dodatkowym polami first_name, last_name i email
@@ -98,20 +110,40 @@ class SendEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
-        print(self.user.id)
-        print(self.user.username)
-        # dodajemy własne dane usera do odpowiedzi
+        user = self.user
+
+        # domyślnie brak zdjęcia
+        profile_image_url = None
+
+        if hasattr(user, "profile"):
+            # 1️⃣ najpierw sprawdź `profile_image`
+            if getattr(user.profile, "profile_image", None):
+                try:
+                    profile_image_url = user.profile.profile_image.url
+                except Exception:
+                    profile_image_url = None
+
+            # 2️⃣ jeśli nie ma `profile_image`, sprawdź `photo`
+            elif getattr(user.profile, "photo", None):
+                try:
+                    profile_image_url = user.profile.photo.url
+                except Exception:
+                    profile_image_url = None
+
+        # 3️⃣ aktualizujemy dane użytkownika
         data.update({
             "user": {
-                "id": self.user.id,
-                "username": self.user.username,
-                "email": self.user.email,
-                "first_name": self.user.first_name,
-                "last_name": self.user.last_name,
-                "photo": self.user.profile.photo.url if hasattr(self.user, 'profile') and self.user.profile.photo else None,
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "profile_image": profile_image_url,  # ✅ jedno finalne pole
             },
             "Auth": "Database"
         })
@@ -119,11 +151,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
-class NoteSerializer(serializers.ModelSerializer):
-    class Meta:
-            model = Note
-            fields =["id","title","content","created_at","author"]
-            extra_kwargs ={"author":{"read_only":True}}
+
 
 class GenerateImageSerializer(serializers.ModelSerializer):
     class Meta:
