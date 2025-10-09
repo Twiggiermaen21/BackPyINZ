@@ -17,7 +17,7 @@ class GeneratedImage(models.Model):
     prompt = models.CharField(max_length=500)
     height = models.IntegerField(default=512)
     width = models.IntegerField(default=512)
-    
+    name = models.CharField(max_length=100, default="new_image")
     styl_artystyczny = models.ForeignKey('StylArtystyczny', on_delete=models.SET_NULL, null=True, blank=True)
     kompozycja = models.ForeignKey('Kompozycja', on_delete=models.SET_NULL, null=True, blank=True)
     kolorystyka = models.ForeignKey('Kolorystyka', on_delete=models.SET_NULL, null=True, blank=True)
@@ -28,7 +28,7 @@ class GeneratedImage(models.Model):
     detale = models.ForeignKey('Detale', on_delete=models.SET_NULL, null=True, blank=True)
     realizm = models.ForeignKey('Realizm', on_delete=models.SET_NULL, null=True, blank=True)
     styl_narracyjny = models.ForeignKey('StylNarracyjny', on_delete=models.SET_NULL, null=True, blank=True)
-
+ 
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -37,6 +37,7 @@ from django.contrib.contenttypes.models import ContentType
 
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(max_length=100, default="new calendar")
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     top_image = models.ForeignKey(
         'GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_top_image"

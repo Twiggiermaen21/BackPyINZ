@@ -379,7 +379,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         data = self.request.data
         user = self.request.user
-        
+        name = data.get("name", "new calendar")
         
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 

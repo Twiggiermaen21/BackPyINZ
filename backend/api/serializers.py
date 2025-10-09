@@ -131,7 +131,7 @@ class GenerateImageSerializer(serializers.ModelSerializer):
         fields = [
             "id", "author", "prompt", "width", "height", "url", "created_at",
             "styl_artystyczny", "kompozycja", "kolorystyka", "atmosfera", "inspiracja",
-            "tlo", "perspektywa", "detale", "realizm", "styl_narracyjny"
+            "tlo", "perspektywa", "detale", "realizm", "styl_narracyjny", "name"
         ]
         extra_kwargs = {
             "author": {"read_only": True},
@@ -222,7 +222,7 @@ class CalendarSerializer(serializers.ModelSerializer):
             "id", "created_at", "author",
             "top_image", "top_image_url",
             "year_data", "field1", "field2", "field3",
-            "bottom","images_for_fields"
+            "bottom","images_for_fields","name"
         ]
         read_only_fields = ["id", "created_at", "top_image_url"]
 
