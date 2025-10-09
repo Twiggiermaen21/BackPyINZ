@@ -160,9 +160,11 @@ class CalendarYearDataSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "author"]
 
 class BottomImageSerializer(serializers.ModelSerializer):
+    url = serializers.ImageField(source='image', read_only=True)
+
     class Meta:
         model = BottomImage
-        fields = ["id", "created_at", "author", "image"]
+        fields = ["id", "created_at", "author", "image", "url"]
         read_only_fields = ["id", "created_at", "author"]
 
 class BottomColorSerializer(serializers.ModelSerializer):

@@ -620,7 +620,6 @@ class UpscalingView(generics.ListCreateAPIView):
             resp.data.update(self.extra_response_data)
         return resp
 
-
 class StylArtystycznyCreate(generics.ListCreateAPIView):
     queryset = StylArtystyczny.objects.all()
     serializer_class = StylArtystycznySerializer
