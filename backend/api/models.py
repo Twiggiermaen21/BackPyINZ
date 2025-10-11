@@ -7,7 +7,7 @@ from cloudinary.models import CloudinaryField
 
 class ProfileImage(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
-    profile_image = CloudinaryField("profile_image", blank=True, null=True)
+    profile_image = CloudinaryField("profile_image", folder="ProfileImages", blank=True, null=True)
 
     def __str__(self):
         return self.user.username
@@ -32,8 +32,7 @@ class GeneratedImage(models.Model):
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
 
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
+
 
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -107,12 +106,10 @@ class BottomImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     image = models.ForeignKey('GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True)
-
 class BottomColor(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     color = models.CharField(max_length=7)
-
 class BottomGradient(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -121,19 +118,6 @@ class BottomGradient(models.Model):
     direction = models.CharField(max_length=20, blank=True, null=True)
     strength = models.CharField(max_length=50, blank=True, null=True)
     theme = models.CharField(max_length=50, blank=True, null=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
 class OutpaintingSDXL(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     input_image = models.ForeignKey(GeneratedImage, on_delete=models.CASCADE, related_name="outpaintings")

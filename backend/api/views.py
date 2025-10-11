@@ -1,13 +1,10 @@
 
 import uuid
 from django.contrib.auth.models import User
-from rest_framework import generics,response,status
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
-from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated,  AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
-# from .utils.bottom import extend_to_aspect_31x81
 from .models import *
 from .serializers import *
 from .pagination import *
@@ -17,27 +14,26 @@ from .utils.cloudinary_upload import upload_image
 from rest_framework.exceptions import ValidationError
 import os
 import json
-from django.contrib.contenttypes.models import ContentType
 from dotenv import load_dotenv
-from rest_framework import status
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework import status
-from google.oauth2 import id_token
-from google.auth.transport import requests
+from rest_framework import generics, status, response
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from cloudinary.uploader import destroy
-
+# User = get_user_model()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
+
+
+
+
+
 
 class UpdateProfileImageView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated]
@@ -151,63 +147,82 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 
 
 
+
 User = get_user_model()
-@csrf_exempt
-def google_auth(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    import json
-    data = json.loads(request.body)
-    token = data.get("credential")
+class GoogleAuthView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
 
-    if not token:
-        return JsonResponse({"error": "No token provided"}, status=400)
+    def post(self, request):
+        token = request.data.get("credential")
 
-    try:
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(),  os.getenv("CLIENT_ID"))
-        email = idinfo.get("email")
-        name = idinfo.get("name", "")
-        picture = idinfo.get("picture")
-        if not email:
-            return JsonResponse({"error": "No email in token"}, status=400)
+        if not token:
+            return response.Response({"error": "No token provided"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Sprawdź, czy użytkownik istnieje
-            user = User.objects.get(email=email)
-            created = False
-        except User.DoesNotExist:
-            # Jeśli nie istnieje, utwórz nowego
-            user = User.objects.create_user(
-                username=email,  # email jako username
-                email=email,
-                first_name=name.split(" ")[0] if name else "",
-                last_name=" ".join(name.split(" ")[1:]) if name and len(name.split(" ")) > 1 else ""
-            )
-            created = True
+            idinfo = id_token.verify_oauth2_token(token, requests.Request(), os.getenv("CLIENT_ID"))
+            email = idinfo.get("email")
+            name = idinfo.get("name", "")
+            google_picture = idinfo.get("picture")
 
-        # Zaloguj użytkownika
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
+            if not email:
+                return response.Response({"error": "No email in token"}, status=status.HTTP_400_BAD_REQUEST)
 
-        return JsonResponse({
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "picture": picture, 
-            },
-            "token": {
-                "access": access_token,
-                "refresh": str(refresh)
-            },
-            "created": created,
-            "Auth": "Google"
-        }, status=200)
+            try:
+                user = User.objects.get(email=email)
+                created = False
+            except User.DoesNotExist:
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    first_name=name.split(" ")[0] if name else "",
+                    last_name=" ".join(name.split(" ")[1:]) if name and len(name.split(" ")) > 1 else ""
+                )
+                created = True
 
-    except ValueError:
-        return JsonResponse({"error": "Invalid token"}, status=403)
+            # 🔹 Szukamy zdjęcia profilowego (z modelu Profile, jeśli istnieje)
+            profile_image_url = None
+
+            if hasattr(user, "profile"):
+                if getattr(user.profile, "profile_image", None):
+                    try:
+                        profile_image_url = user.profile.profile_image.url
+                    except Exception:
+                        profile_image_url = None
+
+                elif getattr(user.profile, "photo", None):
+                    try:
+                        profile_image_url = user.profile.photo.url
+                    except Exception:
+                        profile_image_url = None
+
+            # Jeśli brak zdjęcia w profilu, użyj zdjęcia z Google
+            if not profile_image_url:
+                profile_image_url = google_picture
+
+            # 🔹 Tokeny JWT
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+
+            return response.Response({
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "profile_image": profile_image_url,
+                },
+                "token": {
+                    "access": access_token,
+                    "refresh": str(refresh)
+                },
+                "created": created,
+                "Auth": "Google"
+            }, status=status.HTTP_200_OK)
+
+        except ValueError:
+            return response.Response({"error": "Invalid token"}, status=status.HTTP_403_FORBIDDEN)
+
 
 class GenerateImage(generics.ListCreateAPIView):
     serializer_class = GenerateImageSerializer
