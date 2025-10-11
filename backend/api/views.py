@@ -26,13 +26,9 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from cloudinary.uploader import destroy
-# User = get_user_model()
+User = get_user_model()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
-
-
-
-
 
 
 class UpdateProfileImageView(generics.UpdateAPIView):
@@ -146,10 +142,6 @@ class PasswordResetConfirmView(generics.GenericAPIView):
         return response.Response({"detail": "Hasło zostało zresetowane"}, status=200)
 
 
-
-
-User = get_user_model()
-
 class GoogleAuthView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
@@ -210,6 +202,8 @@ class GoogleAuthView(generics.GenericAPIView):
                     "email": user.email,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
+                    "is_staff": user.is_staff,     
+                    "is_superuser": user.is_superuser,
                     "profile_image": profile_image_url,
                 },
                 "token": {

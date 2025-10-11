@@ -143,7 +143,9 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "profile_image": profile_image_url,  # ✅ jedno finalne pole
+                "is_staff": user.is_staff,      
+                "is_superuser": user.is_superuser,
+                "profile_image": profile_image_url,  
             },
             "Auth": "Database"
         })
