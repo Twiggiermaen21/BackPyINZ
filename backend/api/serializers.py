@@ -360,48 +360,49 @@ class StylArtystycznySerializer(serializers.ModelSerializer):
     class Meta:
         model = StylArtystyczny
         fields = '__all__'
-
+        read_only_fields = ['id']
 class KompozycjaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Kompozycja
         fields = '__all__'
-
+        read_only_fields = ['id']
 class KolorystykaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Kolorystyka
         fields = '__all__'
-
+        read_only_fields = ['id']
 class AtmosferaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Atmosfera
         fields = '__all__'
-
+        read_only_fields = ['id']
 class InspiracjaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Inspiracja
         fields = '__all__'
-
+        read_only_fields = ['id']
 class TloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tlo
         fields = '__all__'
-
+        read_only_fields = ['id']
 class PerspektywaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Perspektywa
         fields = '__all__'
-
+        read_only_fields = ['id']
 class DetaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Detale
         fields = '__all__'
-
+        read_only_fields = ['id']
 class RealizmSerializer(serializers.ModelSerializer):
     class Meta:
         model = Realizm
         fields = '__all__'
-
+        read_only_fields = ['id']
 class StylNarracyjnySerializer(serializers.ModelSerializer):
     class Meta:
         model = StylNarracyjny
-        fields = '__all__'
+        fields = '__all__'  
+        read_only_fields = ['id']
