@@ -231,15 +231,28 @@ class TopImageField(serializers.Field):
         return str(data)
 
     def to_representation(self, value):
+        if value is None:
+            return None
+
+        result = {}
+        # spróbuj pobrać URL, jeśli jest ImageField
         try:
-            # jeśli jest plikiem ImageField w modelu, zwracamy URL
-            return value.url
+            result['url'] = value.url
         except Exception:
-            # jeśli ID lub string
-            return value        
+            result['url'] = None
+
+        # spróbuj pobrać ID, jeśli istnieje
+        try:
+            result['id'] = value.id
+        except AttributeError:
+            # jeśli wartość to string/ID
+            result['id'] = value
+
+        return result
 
 class CalendarSerializer(serializers.ModelSerializer):
     top_image = TopImageField(required=False, allow_null=True)
+    
     top_image_url = serializers.SerializerMethodField()
     year_data = serializers.SerializerMethodField()
     field1 = serializers.SerializerMethodField()
