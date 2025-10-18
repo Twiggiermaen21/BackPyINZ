@@ -319,6 +319,52 @@ class GenerateImage(generics.ListCreateAPIView):
     def get_queryset(self):
         return GeneratedImage.objects.all().order_by('-created_at')
 
+class CalendarUpdateView(generics.RetrieveUpdateAPIView):
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Calendar.objects.filter(author=self.request.user)
+
+    from rest_framework import status, response
+
+class CalendarUpdateView(generics.RetrieveUpdateAPIView):
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Calendar.objects.filter(author=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        print("=== UPDATE REQUEST DATA ===")
+        print("request.data:", request.data)
+        print("request.FILES:", request.FILES)
+        print("kwargs:", kwargs)
+        print("============================")
+
+        calendar = self.get_object()
+
+        # kopia danych (dla bezpieczeństwa, QueryDict -> dict)
+        data = request.data.copy()
+
+        serializer = self.get_serializer(calendar, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        # teraz konwersja ID → obiekt po walidacji
+        top_image_id = serializer.validated_data.get("top_image")
+        if isinstance(top_image_id, (int, str)):
+            try:
+                serializer.validated_data["top_image"] = GeneratedImage.objects.get(id=top_image_id)
+            except GeneratedImage.DoesNotExist:
+                return response.Response(
+                    {"error": "Nie znaleziono obrazu o podanym ID"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # faktyczny update
+        serializer.save()
+
+        return response.Response(serializer.data, status=status.HTTP_200_OK)
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]

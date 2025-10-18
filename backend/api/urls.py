@@ -44,5 +44,6 @@ path('upscale-image/', views.UpscalingView.as_view(), name='upscale-image'),
 
 
     path("calendars/", views.CalendarCreateView.as_view(), name="calendar-create"),
+    path("calendar/<int:pk>/", views.CalendarUpdateView.as_view(), name="calendar-update"),
 
 ]
