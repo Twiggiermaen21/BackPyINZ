@@ -319,14 +319,6 @@ class GenerateImage(generics.ListCreateAPIView):
     def get_queryset(self):
         return GeneratedImage.objects.all().order_by('-created_at')
 
-class CalendarUpdateView(generics.RetrieveUpdateAPIView):
-    serializer_class = CalendarSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return Calendar.objects.filter(author=self.request.user)
-
-    from rest_framework import status, response
 
 class CalendarUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = CalendarSerializer
@@ -336,17 +328,17 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
         return Calendar.objects.filter(author=self.request.user)
 
     def update(self, request, *args, **kwargs):
-        print("=== UPDATE REQUEST DATA ===")
-        print("request.data:", request.data)
-        print("request.FILES:", request.FILES)
-        print("kwargs:", kwargs)
-        print("============================")
+        # print("=== UPDATE REQUEST DATA ===")
+        # print("request.data:", request.data)
+        # print("request.FILES:", request.FILES)
+        # print("kwargs:", kwargs)
+        # print("============================")
 
         calendar = self.get_object()
+        old_calendar = Calendar.objects.get(author=self.request.user, id=kwargs["pk"])
 
         # kopia danych (dla bezpieczeństwa, QueryDict -> dict)
         data = request.data.copy()
-
         serializer = self.get_serializer(calendar, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -360,11 +352,51 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
                     {"error": "Nie znaleziono obrazu o podanym ID"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+        
+        
 
         # faktyczny update
         serializer.save()
 
+         # --- AKTUALIZACJA POWIĄZANEGO YEAR_DATA ---
+        year_data = old_calendar.year_data_id
+        if year_data:
+            try:
+                year_data = CalendarYearData.objects.get(id=year_data)
+            except CalendarYearData.DoesNotExist:
+                return response.Response(
+                    {"error": f"Nie znaleziono YearData o ID {year_data}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            year_data_raw = data.get("year_data")
+
+            if year_data_raw:
+            # --- 1️⃣ Jeśli przyszło jako string JSON, parsujemy ---
+                if isinstance(year_data_raw, str):
+                    try:
+                        year_data_obj = json.loads(year_data_raw)
+                    except json.JSONDecodeError:
+                        return response.Response(
+                            {"error": "Niepoprawny format JSON w year_data"},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                else:
+                    # już jest dict (np. przy JSON body zamiast FormData)
+                    year_data_obj = year_data_raw
+                    
+        # --- 4️⃣ Aktualizujemy pola ---
+                for field in ["text", "font", "weight", "size", "color", "position"]:
+                    if field in year_data_obj:
+                        setattr(year_data, field, year_data_obj[field])
+
+                # --- 5️⃣ Zapis do bazy ---
+                year_data.save()
+        
+    
         return response.Response(serializer.data, status=status.HTTP_200_OK)
+    
+
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
@@ -495,8 +527,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 weight=data.get("yearFontWeight"),
                 size=str(data.get("yearFontSize")) if data.get("yearFontSize") else None,
                 color=data.get("yearColor"),
-                positionX=data.get("yearPositionX"),
-                positionY=data.get("yearPositionY")
+                position=data.get("yearPositionX"),
+                
             )
 
         # --- 2. Obsługa dolnej sekcji ---
@@ -557,8 +589,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         author=user,
                         path=item["image"],
                         size=item.get("scale"),
-                        positionX=item.get("positionX"),
-                        positionY=item.get("positionY")
+                        position=item.get("positionX"),
+                  
                     )
                 else:
                     continue

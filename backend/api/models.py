@@ -90,8 +90,8 @@ class CalendarYearData(models.Model):
     weight = models.CharField(max_length=50, blank=True, null=True)
     size = models.CharField(max_length=20, blank=True, null=True)
     color = models.CharField(max_length=7, blank=True, null=True)
-    positionX = models.CharField(max_length=50, blank=True, null=True)
-    positionY = models.CharField(max_length=50, blank=True, null=True)
+    position = models.CharField(max_length=50, blank=True, null=True)
+   
 
 class ImageForField(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
