@@ -1,10 +1,9 @@
 from django.contrib import admin
 from django.urls import path,include
-from api.views import CreateUserView, GoogleAuthView, MyTokenObtainPairView, PasswordResetView,PasswordResetConfirmView
+from api.views.auth_views import *
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
-
 
 urlpatterns = [
     path('admin/', admin.site.urls),
