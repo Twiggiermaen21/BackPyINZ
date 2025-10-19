@@ -11,7 +11,15 @@ from rest_framework.exceptions import ValidationError
 import json
 from rest_framework import generics, status, response
 
+class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Calendar.objects.all()
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        # ograniczamy do kalendarzy użytkownika
+        
+        return Calendar.objects.filter(author=self.request.user)
 
 class CalendarUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = CalendarSerializer

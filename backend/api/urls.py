@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views_pom
+
 from .views.metadata_views import *
 from .views.profile_views import *
 from .views.calendar_views import *
@@ -16,6 +16,7 @@ path('upscale-image/', UpscalingView.as_view(), name='upscale-image'),
     path("user/update-profile-image/", UpdateProfileImageView.as_view(), name="update-profile-image"),
     path("calendars/", CalendarCreateView.as_view(), name="calendar-create"),
     path("calendar/<int:pk>/", CalendarUpdateView.as_view(), name="calendar-update"),
+    path("calendar-destroy/<int:pk>/", CalendarDetailView.as_view(), name="calendar-detail"),
 
 
 
