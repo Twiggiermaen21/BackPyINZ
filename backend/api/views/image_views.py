@@ -112,8 +112,7 @@ class GenerateImage(generics.ListCreateAPIView):
             "url": self.generated_instance.url
         }, status=status.HTTP_201_CREATED)
     def get_queryset(self):
-        return GeneratedImage.objects.all().order_by('-created_at')
-
+        return GeneratedImage.objects.filter(author=self.request.user).order_by('-created_at')
 
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
