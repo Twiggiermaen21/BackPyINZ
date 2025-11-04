@@ -1,0 +1,18 @@
+{
+    "calendar_id": 69,
+    "author": "123kacper",
+    "year": null,
+    "created_at": "2025-09-23 16:38:29.010075+00:00",
+    "fields": {
+        "field1": "CalendarMonthFieldImage object (42)",
+        "field2": "helo 123",
+        "field3": "CalendarMonthFieldImage object (43)"
+    },
+    "bottom": [
+        "BottomColor object (40)",
+        "BottomColor object (40)",
+        "BottomColor object (40)"
+    ],
+    "images_for_fields": [],
+    "top_image": null
+}

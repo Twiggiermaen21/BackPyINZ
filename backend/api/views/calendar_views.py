@@ -10,6 +10,15 @@ from ..utils.cloudinary_upload import upload_image
 from rest_framework.exceptions import ValidationError
 import json
 from rest_framework import generics, status, response
+from django.conf import settings
+
+import shutil
+
+
+
+
+
+import os
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
@@ -29,11 +38,7 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
         return Calendar.objects.filter(author=self.request.user)
 
     def update(self, request, *args, **kwargs):
-        # print("=== UPDATE REQUEST DATA ===")
-        # print("request.data:", request.data)
-        # print("request.FILES:", request.FILES)
-        # print("kwargs:", kwargs)
-        # print("============================")
+    
 
         calendar = self.get_object()
         old_calendar = Calendar.objects.get(author=self.request.user, id=kwargs["pk"])
@@ -87,7 +92,7 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
                     year_data_obj = year_data_raw
                     
         # --- 4️⃣ Aktualizujemy pola ---
-                for field in ["text", "font", "weight", "size", "color", "position"]:
+                for field in ["text", "font", "weight", "size", "color", "positionX", "positionY"]:
                     if field in year_data_obj:
                         setattr(year_data, field, year_data_obj[field])
 
@@ -177,6 +182,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 
         top_image_value = serializer.validated_data.get("top_image")
+        
 
         if image_from_disk:
             if image_from_disk:
@@ -228,8 +234,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 weight=data.get("yearFontWeight"),
                 size=str(data.get("yearFontSize")) if data.get("yearFontSize") else None,
                 color=data.get("yearColor"),
-                position=data.get("yearPositionX"),
-                
+                positionX=data.get("yearPositionX"),
+                positionY=data.get("yearPositionY"),
             )
 
         # --- 2. Obsługa dolnej sekcji ---
@@ -290,8 +296,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         author=user,
                         path=item["image"],
                         size=item.get("scale"),
-                        position=item.get("positionX"),
-                  
+                        positionX=item.get("positionX"),
+                        positionY=item.get("positionY"),
                     )
                 else:
                     continue
@@ -321,7 +327,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         "generated_images",
                         filename
                     )
-                    print("Generated image URL:", generated_url)  
+                    
                     ImageForField.objects.create(
                     user=self.request.user,
                     calendar=calendar,       # Twój obiekt Calendar, który został zapisany wcześniej
@@ -329,7 +335,196 @@ class CalendarCreateView(generics.ListCreateAPIView):
                     url=generated_url
                 )
 
-       
-        print("Calendar created:", calendar.id)
-        print("Payload:", data)
+    
 
+import requests
+
+class CalendarPrint(generics.CreateAPIView):
+
+    def create(self, request, *args, **kwargs):
+        try:
+            calendar_id = request.data.get("id_kalendarz")
+            if not calendar_id:
+                return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)
+
+            qs = Calendar.objects.filter(author=self.request.user, id=calendar_id).prefetch_related(
+                Prefetch(
+                    "imageforfield_set",
+                    queryset=ImageForField.objects.filter(user=self.request.user),
+                    to_attr="prefetched_images_for_fields"
+                )
+            )
+            calendar = qs.first()
+            if not calendar:
+                return Response({"error": f"Nie znaleziono kalendarza o id {calendar_id}"}, status=404)
+
+            export_dir = os.path.join(settings.MEDIA_ROOT, "calendar_exports", str(calendar_id))
+            os.makedirs(export_dir, exist_ok=True)
+
+            data = {
+                "calendar_id": calendar.id,
+                "author": str(calendar.author),
+                "created_at": str(calendar.created_at),
+                "fields": {},
+                "bottom": None,
+                "top_image": None,
+                "year": None,
+            }
+
+            # Rok
+            if getattr(calendar, "year_data_id", None):
+                year_data_obj = CalendarYearData.objects.filter(id=calendar.year_data_id).first()
+                if year_data_obj:
+                    data["year"] = {
+                        "text": year_data_obj.text,
+                        "font": year_data_obj.font,
+                        "weight": year_data_obj.weight,
+                        "size": year_data_obj.size,
+                        "color": year_data_obj.color,
+                        "positionX": year_data_obj.positionX,
+                        "positionY": year_data_obj.positionY,
+                    }
+
+            def handle_field(field_obj, field_number):
+                """Zwraca dane pola obrazkowego lub tekstowego bez pobierania plików."""
+                if not field_obj:
+                    return None
+
+                # Jeśli pole ma atrybut 'path' lub 'value', traktujemy je jako obraz
+                if hasattr(field_obj, "positionX") and hasattr(field_obj, "size"):
+                 
+                    return {
+                        "field_number": field_number,
+                        "positionX": getattr(field_obj, "positionX", None),
+                        "positionY": getattr(field_obj, "positionY", None),
+                        "size": getattr(field_obj, "size", None),
+                    }
+                
+                if hasattr(field_obj, "url"):
+                    image_url = getattr(field_obj, "path", None) or getattr(field_obj, "url", None)
+                    
+               
+                    if image_url:
+                        try:
+                     
+                            response = requests.get(image_url, stream=True)
+                            if response.status_code == 200:
+                                filename = f"field{field_number}_{os.path.basename(image_url)}"
+                                dest = os.path.join(export_dir, filename)
+                                with open(dest, "wb") as f:
+                                    for chunk in response.iter_content(1024):
+                                        f.write(chunk)
+                                return {
+                                        "field_number": field_obj.field_number ,
+                                        "image_url": dest
+                                    }
+                        except Exception as e:
+                            print(f"Error downloading field{field_number}: {e}")
+                            return None
+
+                # Jeśli pole ma tekst
+                if hasattr(field_obj, "text") and field_obj.text:
+                    return {
+                        "text": field_obj.text,
+                        "font": getattr(field_obj, "font", None),
+                        "weight": getattr(field_obj, "weight", None)
+                    }
+
+                return None
+           
+            def handle_bottom(bottom_obj):
+                if not bottom_obj:
+                    return None
+
+                        # Obraz
+                if isinstance(bottom_obj, BottomImage) and bottom_obj.image:
+                    image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
+                    if image_url and export_dir:
+                        try:
+                            import requests, os
+                            filename = f"bottom_image_{os.path.basename(image_url)}"
+                            dest = os.path.join(export_dir, filename)
+                            response = requests.get(image_url, stream=True)
+                            if response.status_code == 200:
+                                with open(dest, "wb") as f:
+                                    for chunk in response.iter_content(1024):
+                                        f.write(chunk)
+                                return {"type": "image", "path": dest}
+                        except Exception as e:
+                            print(f"Error downloading bottom image: {e}")
+                            return {"type": "image", "url": image_url}
+                    return {"type": "image", "url": image_url}
+
+                # Kolor
+                elif isinstance(bottom_obj, BottomColor):
+                    return {
+                        "type": "color",
+                        "color": bottom_obj.color
+                    }
+
+                # Gradient
+                elif isinstance(bottom_obj, BottomGradient):
+                    gradient_css = f"linear-gradient({bottom_obj.direction or 'to bottom'}, {bottom_obj.start_color}, {bottom_obj.end_color})"
+                    return {
+                        "type": "gradient",
+                        "start_color": bottom_obj.start_color,
+                        "end_color": bottom_obj.end_color,
+                        "direction": bottom_obj.direction,
+                        "strength": bottom_obj.strength,
+                        "theme": bottom_obj.theme,
+                        "css": gradient_css
+                }
+
+                return None
+            # Top image
+            if calendar.top_image_id:
+                try:
+                    gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
+                    if gen_img.url:
+                        filename = f"top_image_{os.path.basename(gen_img.url)}"
+                        dest = os.path.join(export_dir, filename)
+                        try:
+                            response = requests.get(gen_img.url, stream=True)
+                            if response.status_code == 200:
+                                with open(dest, "wb") as f:
+                                    for chunk in response.iter_content(1024):
+                                        f.write(chunk)
+                                data["top_image"] = dest
+                        except Exception as e:
+                            print(f"Error downloading top_image: {e}")
+                except GeneratedImage.DoesNotExist:
+                    data["top_image"] = None
+
+            # Bottom
+            bottom_obj = calendar.bottom  # pobranie GenericForeignKey
+            data["bottom"] = handle_bottom(bottom_obj)
+            # Połączone pola: field1-3 + prefetched images
+            all_fields = []
+
+            # Fields 1–3
+            for i in range(1, 4):
+                all_fields.append((getattr(calendar, f"field{i}", None), i))
+               
+
+            # Prefetched images
+            for img in getattr(calendar, "prefetched_images_for_fields", []):
+                all_fields.append((img, f"prefetched_image_{img.id}"))
+
+            # Obsługujemy wszystkie pola jednym wywołaniem handle_field
+            for field_obj, field_name in all_fields:
+                data["fields"][field_name] = handle_field(field_obj, field_name)
+
+            # Zapis JSON
+            json_path = os.path.join(export_dir, "data.json")
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+
+            return Response({
+                "message": "Dane kalendarza zostały zapisane do folderu.",
+                "folder": export_dir,
+                "json_path": json_path,
+            })
+
+        except Exception as e:
+            print("Unexpected error:", e)
+            return Response({"error": str(e)}, status=500)

@@ -287,8 +287,8 @@ class CalendarSerializer(serializers.ModelSerializer):
                 "weight": obj.year_data.weight,
                 "size": obj.year_data.size,
                 "color": obj.year_data.color,
-                "positionX": getattr(obj.year_data, "positionX", None),
-                "positionY": getattr(obj.year_data, "positionY", None),
+                "positionX": obj.year_data.positionX,
+                "positionY": obj.year_data.positionY,
             }
         return None
 

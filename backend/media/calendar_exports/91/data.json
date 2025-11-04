@@ -1,0 +1,50 @@
+{
+    "calendar_id": 91,
+    "author": "123kacper",
+    "created_at": "2025-11-04 18:30:27.372103+00:00",
+    "fields": {
+        "1": {
+            "field_number": 1,
+            "positionX": "123",
+            "positionY": "1",
+            "size": 1
+        },
+        "2": {
+            "text": "ADADADAD",
+            "font": "Arial",
+            "weight": "600"
+        },
+        "3": {
+            "field_number": 3,
+            "positionX": "176",
+            "positionY": "11",
+            "size": 1
+        },
+        "prefetched_image_11": {
+            "field_number": 1,
+            "image_url": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\91\\fieldprefetched_image_11_generated_c72c14b568db4221b40316e890aa1460.png"
+        },
+        "prefetched_image_12": {
+            "field_number": 3,
+            "image_url": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\91\\fieldprefetched_image_12_generated_560f6dc828244aad91c8b5c700514d36.jpg"
+        }
+    },
+    "bottom": {
+        "type": "gradient",
+        "start_color": "#2b516d",
+        "end_color": "#032945",
+        "direction": "to bottom right",
+        "strength": null,
+        "theme": "classic",
+        "css": "linear-gradient(to bottom right, #2b516d, #032945)"
+    },
+    "top_image": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\91\\top_image_generated_276d55192b284f0a82ac0dcc3a6fe50a.jpg",
+    "year": {
+        "text": "2025",
+        "font": "'Montserrat', sans-serif",
+        "weight": "normal",
+        "size": "57",
+        "color": "#63bc1a",
+        "position": "191"
+    }
+}
