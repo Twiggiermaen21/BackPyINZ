@@ -19,14 +19,22 @@ class ProfileImageSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    profile = ProfileImageSerializer()
+    profile = ProfileImageSerializer(required=False)
+    
     class Meta:
         model = User
         # dodajemy first_name i last_name
         fields = ["id", "username", "email", "first_name", "last_name", "password", 'profile']
 
+
+    def validate_email(self, value):
+        """Sprawdza, czy email jest unikalny."""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Użytkownik z tym adresem e-mail już istnieje.")
+        return value
+
     def create(self, validated_data):
-        # tworzymy usera z dodatkowym polami first_name, last_name i email
+        print("🔧 Tworzenie użytkownika z danymi:", validated_data)
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data.get("email", ""),
@@ -34,6 +42,11 @@ class UserSerializer(serializers.ModelSerializer):
             last_name=validated_data.get("last_name", ""),
             password=validated_data["password"],
         )
+
+          # Ustawiamy użytkownika jako nieaktywny do czasu aktywacji
+        user.is_active = False
+        user.save()
+        print("✅ Utworzono użytkownika:", user.username)
         return user
 User = get_user_model()
 

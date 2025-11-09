@@ -8,6 +8,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/user/register/",CreateUserView.as_view(),name="register"),
+    path('activate-account/<uidb64>/<token>/', ActivateUserView.as_view(), name='activate-account'),
     path("auth/send-email/", PasswordResetView.as_view(), name="send_email"),
     path("auth/password-reset-confirm/", PasswordResetConfirmView.as_view(), name="password_reset_confirm"),
     path("api/token/", MyTokenObtainPairView.as_view(), name="get_token"),

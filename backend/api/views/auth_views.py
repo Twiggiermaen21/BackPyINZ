@@ -29,7 +29,7 @@ from cloudinary.uploader import destroy
 User = get_user_model()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
-
+from django.utils.encoding import force_str
 
 
 
@@ -58,10 +58,62 @@ class UpdateProfileImageView(generics.UpdateAPIView):
         serializer = ProfileImageSerializer(profile)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
+class ActivateUserView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({"detail": "Nieprawidłowy link aktywacyjny."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.is_active:
+            return Response({"detail": "Konto już aktywne."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.save()
+            return Response({"detail": "Konto zostało aktywowane."}, status=status.HTTP_200_OK)
+        else:
+            return Response({"detail": "Nieprawidłowy lub wygasły token."}, status=status.HTTP_400_BAD_REQUEST)
+
 class CreateUserView(generics.ListCreateAPIView):
-    queryset= User.objects.all()
+    queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        print("📥 Otrzymane dane:", request.data)  # <- zobaczysz, co przyszło z frontendu
+
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            print("✅ Dane są poprawne, tworzymy użytkownika...")
+            # Tworzymy użytkownika, ustawiamy nieaktywny
+            user = serializer.save(is_active=False)
+            print("👤 Utworzono użytkownika:", user.username)
+
+            # Generowanie tokenu aktywacyjnego
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            activation_link = f"http://localhost:5173/activate-account/{uid}/{token}/"
+
+            # Wysyłamy maila
+            send_mail(
+                subject="Aktywacja konta",
+                message=f"Kliknij w link aby aktywować swoje konto: {activation_link}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            print("📧 Wysłano maila aktywacyjnego na:", user.email)
+
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        else:
+            print("❌ Błąd walidacji serializer:")
+            print(serializer.errors)  # <- tu zobaczysz dokładny powód błędu 400
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class MyTokenObtainPairView(TokenObtainPairView): 
     serializer_class = MyTokenObtainPairSerializer
