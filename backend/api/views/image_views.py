@@ -18,13 +18,19 @@ class GenerateImage(generics.ListCreateAPIView):
     serializer_class = GenerateImageSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = ImagesPagination
+
     def perform_create(self, serializer):
         data = self.request.data
-        prompt = data.get('prompt')
+        print("📥 Odebrane dane z requestu:", data)
+
+        prompt = data.get('prompt', None)
         width = 1792
         height = 1232
         user = self.request.user 
+        print(f"👤 Użytkownik: {user}")
+        print(f"🧠 Prompt: {prompt}")
 
+        # Pobieramy ID (mogą być None)
         inspiration_id = data.get('inspiracja')
         composition_id = data.get('kompozycja')
         color_id = data.get('kolorystyka')
@@ -36,30 +42,57 @@ class GenerateImage(generics.ListCreateAPIView):
         realizm_id = data.get('realizm')
         styl_narracyjny_id = data.get('styl_narracyjny')
 
-        try:
-            inspiration = Inspiracja.objects.get(id=inspiration_id)
-            composition = Kompozycja.objects.get(id=composition_id)
-            color = Kolorystyka.objects.get(id=color_id)
-            style = StylArtystyczny.objects.get(id=style_id)
+        print("🧩 Odebrane ID:")
+        print({
+            "inspiracja": inspiration_id,
+            "kompozycja": composition_id,
+            "kolorystyka": color_id,
+            "styl_artystyczny": style_id,
+            "atmosfera": atmosfera_id,
+            "tlo": tlo_id,
+            "perspektywa": perspektywa_id,
+            "detale": detale_id,
+            "realizm": realizm_id,
+            "styl_narracyjny": styl_narracyjny_id,
+        })
 
-            atmosfera = Atmosfera.objects.filter(id=atmosfera_id).first()
-            tlo = Tlo.objects.filter(id=tlo_id).first()
-            perspektywa = Perspektywa.objects.filter(id=perspektywa_id).first()
-            detale = Detale.objects.filter(id=detale_id).first()
-            realizm = Realizm.objects.filter(id=realizm_id).first()
-            styl_narracyjny = StylNarracyjny.objects.filter(id=styl_narracyjny_id).first()
-        except Exception as e:
-            raise ValueError(f"Invalid ID in one of the foreign keys: {e}")
+        # Pobieramy obiekty powiązane tylko jeśli istnieje ID
+        inspiration = Inspiracja.objects.filter(id=inspiration_id).first() if inspiration_id else None
+        composition = Kompozycja.objects.filter(id=composition_id).first() if composition_id else None
+        color = Kolorystyka.objects.filter(id=color_id).first() if color_id else None
+        style = StylArtystyczny.objects.filter(id=style_id).first() if style_id else None
+        atmosfera = Atmosfera.objects.filter(id=atmosfera_id).first() if atmosfera_id else None
+        tlo = Tlo.objects.filter(id=tlo_id).first() if tlo_id else None
+        perspektywa = Perspektywa.objects.filter(id=perspektywa_id).first() if perspektywa_id else None
+        detale = Detale.objects.filter(id=detale_id).first() if detale_id else None
+        realizm = Realizm.objects.filter(id=realizm_id).first() if realizm_id else None
+        styl_narracyjny = StylNarracyjny.objects.filter(id=styl_narracyjny_id).first() if styl_narracyjny_id else None
 
+        print("📚 Obiekty powiązane:")
+        print({
+            "inspiracja": inspiration.nazwa if inspiration else None,
+            "kompozycja": composition.nazwa if composition else None,
+            "kolorystyka": color.nazwa if color else None,
+            "styl_artystyczny": style.nazwa if style else None,
+            "atmosfera": atmosfera.nazwa if atmosfera else None,
+            "tlo": tlo.nazwa if tlo else None,
+            "perspektywa": perspektywa.nazwa if perspektywa else None,
+            "detale": detale.nazwa if detale else None,
+            "realizm": realizm.nazwa if realizm else None,
+            "styl_narracyjny": styl_narracyjny.nazwa if styl_narracyjny else None,
+        })
+
+        # Przygotowanie danych do funkcji generate_image_from_prompt
         try:
+            print("⚙️ Wywołuję generate_image_from_prompt()...")
             image_bytes = generate_image_from_prompt(
-                base_prompt=prompt,
+                base_prompt=prompt if prompt else None,
                 width=width,
                 height=height,
-                inspiration=inspiration.nazwa,
-                color=color.nazwa,
-                composition=composition.nazwa,
-                style=style.nazwa,
+                inspiration=inspiration.nazwa if inspiration else None,
+                color=color.nazwa if color else None,
+                composition=composition.nazwa if composition else None,
+                style=style.nazwa if style else None,
                 atmosfera=atmosfera.nazwa if atmosfera else None,
                 tlo=tlo.nazwa if tlo else None,
                 perspektywa=perspektywa.nazwa if perspektywa else None,
@@ -67,22 +100,21 @@ class GenerateImage(generics.ListCreateAPIView):
                 realizm=realizm.nazwa if realizm else None,
                 styl_narracyjny=styl_narracyjny.nazwa if styl_narracyjny else None
             )
-
-            filename = f"generated_{uuid.uuid4().hex}.png"
-            generated_url = upload_image(
-                            image_bytes,                     # bytes obrazu
-                            "generated_images",
-                            filename                           # nazwa pliku w Cloudinary
-                        )
-            # filename = os.path.basename(image_path)
-            # input_path = os.path.join(BASE_DIR, "backend", "images", filename)
-            # output_path = os.path.join(BASE_DIR, "backend", "images", f"extended_{filename}")
+            print("✅ Obraz wygenerowany (bytes length):", len(image_bytes))
         except Exception as e:
-            raise Exception(f"Image generation failed: {e}")
+            print("❌ Błąd podczas generowania obrazu:", str(e))
+            raise
 
-        # extend_to_aspect_31x81(image_path=input_path, output_path=output_path)
+        try:
+            filename = f"generated_{uuid.uuid4().hex}.png"
+            print(f"💾 Upload obrazu jako: {filename}")
+            generated_url = upload_image(image_bytes, "generated_images", filename)
+            print("🌐 URL wygenerowanego obrazu:", generated_url)
+        except Exception as e:
+            print("❌ Błąd podczas uploadu obrazu:", str(e))
+            raise
 
-        # Zapisz obiekt i zachowaj go do zwrócenia w create
+        # Zapisujemy instancję
         self.generated_instance = serializer.save(
             author=user,
             prompt=prompt,
@@ -101,19 +133,21 @@ class GenerateImage(generics.ListCreateAPIView):
             styl_narracyjny=styl_narracyjny
         )
 
+        print("📝 Obraz zapisany w bazie jako:", self.generated_instance.id)
+
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         self.perform_create(serializer)
 
         return response.Response({
             "message": "Image generated successfully.",
             "url": self.generated_instance.url
         }, status=status.HTTP_201_CREATED)
+
     def get_queryset(self):
         return GeneratedImage.objects.filter(author=self.request.user).order_by('-created_at')
-
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
     queryset = OutpaintingSDXL.objects.all()

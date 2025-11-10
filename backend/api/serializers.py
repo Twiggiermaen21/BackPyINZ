@@ -182,6 +182,20 @@ class GenerateImageSerializer(serializers.ModelSerializer):
             "height": {"read_only": True},
             "url": {"read_only": True},
             "created_at": {"read_only": True},
+
+
+              # wszystkie inne pola są opcjonalne
+            "prompt": {"required": False, "allow_blank": True, "allow_null": True},
+            "styl_artystyczny": {"required": False, "allow_null": True},
+            "kompozycja": {"required": False, "allow_null": True},
+            "kolorystyka": {"required": False, "allow_null": True},
+            "atmosfera": {"required": False, "allow_null": True},
+            "inspiracja": {"required": False, "allow_null": True},
+            "tlo": {"required": False, "allow_null": True},
+            "perspektywa": {"required": False, "allow_null": True},
+            "detale": {"required": False, "allow_null": True},
+            "realizm": {"required": False, "allow_null": True},
+            "styl_narracyjny": {"required": False, "allow_null": True},
         }
         
 class CalendarMonthFieldTextSerializer(serializers.ModelSerializer):

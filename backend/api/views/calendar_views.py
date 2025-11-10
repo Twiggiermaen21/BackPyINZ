@@ -11,13 +11,7 @@ from rest_framework.exceptions import ValidationError
 import json
 from rest_framework import generics, status, response
 from django.conf import settings
-
-import shutil
-
-
-
-
-
+import requests
 import os
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -336,8 +330,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 )
 
     
-
-import requests
 
 class CalendarPrint(generics.CreateAPIView):
 

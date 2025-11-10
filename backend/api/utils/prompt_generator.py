@@ -66,6 +66,9 @@ def get_detailed_prompt_from_model(
     temperature: float = 0.7,
     stream: bool = False
 ):
+    print("Argumenty funkcji:")
+    for name, value in locals().items():
+        print(f"{name}: {value}")
     full_prompt = generate_custom_prompt(
         baseprompt=base_prompt,
         inspiration=inspiration,
