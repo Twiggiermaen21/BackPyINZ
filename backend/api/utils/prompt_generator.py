@@ -1,5 +1,4 @@
-import os
-from together import Together
+
 
 def generate_custom_prompt(
     baseprompt,
@@ -14,8 +13,18 @@ def generate_custom_prompt(
     realizm=None,
     styl_narracyjny=None
 ):
-    prompt = (
-        f"Create a complete and visually rich illustration inspired by the theme: {baseprompt}. "
+    special_text = "Please generate a creative, visually rich theme for an illustration. Provide only the theme in 3–6 words, no extra explanation."
+
+    # Tworzymy początek promptu
+    if baseprompt and baseprompt != special_text:
+        prompt = (
+            f"Create a complete and visually rich illustration inspired by the theme: {baseprompt}. "
+        )
+    else:
+        prompt = ""  # jeśli baseprompt jest None lub specjalnym tekstem, pomijamy początek
+
+    # Reszta instrukcji zawsze
+    prompt += (
         "Explore various artistic styles such as surrealist, watercolor, digital painting, retro-futurism, brutalism, baroque, minimalist, or others, and choose the one that best fits the theme. "
         "Emphasize the following aspects: "
         "1. A strong, detailed main subject placed in the upper half of the composition, evoking emotion, narrative, or symbolic meaning. "

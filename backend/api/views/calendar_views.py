@@ -14,6 +14,9 @@ from django.conf import settings
 import requests
 import os
 
+from PIL import Image, ImageDraw, ImageFont
+
+
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
     serializer_class = CalendarSerializer
@@ -510,6 +513,36 @@ class CalendarPrint(generics.CreateAPIView):
             json_path = os.path.join(export_dir, "data.json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+
+        
+            # Otwórz obraz
+            image = Image.open(data["top_image"])
+
+            # Utwórz kontekst rysowania
+            draw = ImageDraw.Draw(image)
+
+            # Spróbuj załadować czcionkę
+            try:
+                font = ImageFont.truetype("times.ttf",int(data["year"]["size"]))
+            except IOError:
+                # Fallback jeśli nie znajdzie pliku czcionki
+                font = ImageFont.load_default()
+                print("⚠️ Nie znaleziono czcionki 'Times New Roman', użyto domyślnej.")
+
+            # Dodaj tekst
+            draw.text(
+                (int(data["year"]["positionX"]), int(data["year"]["positionY"])),
+                data["year"]["text"],
+                font=font,
+                fill=data["year"]["color"]
+            )
+
+            # Zapisz wynik
+            output_path = data["top_image"].replace(".jpg", "_with_text.jpg")
+            image.save(output_path)
+
+            print(f"✅ Zapisano nowy obraz: {output_path}")
+                        
 
             return Response({
                 "message": "Dane kalendarza zostały zapisane do folderu.",
