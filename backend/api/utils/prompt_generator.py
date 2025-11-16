@@ -71,7 +71,8 @@ def get_detailed_prompt_from_model(
     detale: str = None,
     realizm: str = None,
     styl_narracyjny: str = None,
-    model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    # model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    model: str = "ServiceNow-AI/Apriel-1.5-15b-Thinker",
     temperature: float = 0.7,
     stream: bool = False
 ):
