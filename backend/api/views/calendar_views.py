@@ -332,7 +332,17 @@ class CalendarCreateView(generics.ListCreateAPIView):
                     url=generated_url
                 )
 
-    
+class CalendarSearchBarView(generics.ListAPIView):
+    serializer_class = CalendarSearchSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None 
+
+
+    def get_queryset(self):
+        
+        return Calendar.objects.filter(
+            author=self.request.user,
+                ).order_by("-created_at")
 
 class CalendarPrint(generics.CreateAPIView):
 

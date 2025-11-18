@@ -19,8 +19,10 @@ path('upscale-image/', UpscalingView.as_view(), name='upscale-image'),
     path("calendar-destroy/<int:pk>/", CalendarDetailView.as_view(), name="calendar-detail"),
     path("calendar-print/", CalendarPrint.as_view(), name="calendar-print"),
 
+    path("calendar-search/", CalendarSearchBarView.as_view(), name="calendar-search"),
+    path("image-search/", ImageSearchBarView.as_view(), name="image-search"),
 
-    
+
     path('styl_artystyczny/', StylArtystycznyCreate.as_view(), name='styl-artystyczny-list'),
     path('styl_artystyczny/<int:pk>/', StylArtystycznyDetail.as_view(), name='styl-artystyczny-detail'),
 

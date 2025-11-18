@@ -147,7 +147,34 @@ class GenerateImage(generics.ListCreateAPIView):
         }, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
-        return GeneratedImage.objects.filter(author=self.request.user).order_by('-created_at')
+        # Pobranie użytkownika
+        user = self.request.user
+        
+        # Pobranie parametru z query params
+        project_name = self.request.query_params.get('project_name', None)
+        
+        # Podstawowy queryset dla danego użytkownika
+        queryset = GeneratedImage.objects.filter(author=user)
+        
+        # Jeśli podano project_name, filtruj też po nazwie projektu
+        if project_name:
+            queryset = queryset.filter(project__name=project_name)
+        
+        # Posortuj malejąco po dacie utworzenia
+        return queryset.order_by('-created_at')
+    
+    
+class ImageSearchBarView(generics.ListAPIView):
+    serializer_class = ImageSearchSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None 
+
+
+    def get_queryset(self):
+        
+        return GeneratedImage.objects.filter(
+            author=self.request.user,
+                ).order_by("-created_at")
 
 class GenerateImageToImageSDXLView(generics.ListCreateAPIView):
     queryset = OutpaintingSDXL.objects.all()

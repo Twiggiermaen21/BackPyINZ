@@ -277,6 +277,16 @@ class TopImageField(serializers.Field):
 
         return result
 
+class CalendarSearchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Calendar
+        fields = ['id', 'name']  
+
+class ImageSearchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GeneratedImage
+        fields = ['id', 'name', ]
+
 class CalendarSerializer(serializers.ModelSerializer):
     top_image = TopImageField(required=False, allow_null=True)
     
