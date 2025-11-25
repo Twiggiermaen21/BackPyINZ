@@ -9,6 +9,7 @@ urlpatterns=[
 path('generate/', GenerateImage.as_view(), name='generate-image'),
 path('generate-image-to-image-sdxl/', GenerateImageToImageSDXLView.as_view(), name='generate-image-to-image-sdxl'),
 path('upscale-image/', UpscalingView.as_view(), name='upscale-image'),
+path("images-by-project/<str:project_name>/", ImagesByProjectView.as_view()),
 
     path("user/update-profile/", ProfileUpdateView.as_view(), name="update-profile"),
     path("user/change-email/", EmailUpdateView.as_view(), name="change-email"),
@@ -18,6 +19,9 @@ path('upscale-image/', UpscalingView.as_view(), name='upscale-image'),
     path("calendar/<int:pk>/", CalendarUpdateView.as_view(), name="calendar-update"),
     path("calendar-destroy/<int:pk>/", CalendarDetailView.as_view(), name="calendar-detail"),
     path("calendar-print/", CalendarPrint.as_view(), name="calendar-print"),
+
+    path("calendar-by-project/<str:project_name>/", CalendarByProjectView.as_view()),
+
 
     path("calendar-search/", CalendarSearchBarView.as_view(), name="calendar-search"),
     path("image-search/", ImageSearchBarView.as_view(), name="image-search"),

@@ -100,6 +100,54 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
 
+class CalendarByProjectView(generics.ListAPIView):
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
+
+    lookup_url_kwarg = "project_name"
+
+    def get_queryset(self):
+        user = self.request.user
+        name = self.kwargs.get("project_name")  # teraz to nazwa, nie id
+        qs = Calendar.objects.filter(
+            author=user,
+            name=name
+        ).select_related(
+            "top_image",
+            "year_data",
+            "field1_content_type",
+            "field2_content_type",
+            "field3_content_type",
+            "bottom_content_type",
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
+            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
+            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
+        )
+
+        # POPRAWIONE
+        qs = qs.prefetch_related(
+            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
+            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
+            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch(
+                "imageforfield_set",
+                queryset=ImageForField.objects.filter(user=user),
+                to_attr="prefetched_images_for_fields",
+            )
+        )
+
+   
+
+        print(qs.query)
+        return qs
+
+
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]

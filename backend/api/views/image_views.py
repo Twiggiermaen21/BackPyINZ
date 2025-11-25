@@ -164,6 +164,25 @@ class GenerateImage(generics.ListCreateAPIView):
         return queryset.order_by('-created_at')
     
     
+class ImagesByProjectView(generics.ListAPIView):
+    serializer_class = GenerateImageSerializer
+    permission_classes = [IsAuthenticated]
+
+    lookup_url_kwarg = "project_name"
+
+    def get_queryset(self):
+        user = self.request.user
+        project_name = self.kwargs.get("project_name")
+
+        # Podstawowy queryset dla użytkownika
+        qs = GeneratedImage.objects.filter(author=user)
+
+        # Filtr po nazwie projektu, jeśli podano
+        if project_name:
+            qs = qs.filter(name=project_name)
+
+        # Posortuj malejąco po dacie utworzenia
+        return qs.order_by("-created_at")
 class ImageSearchBarView(generics.ListAPIView):
     serializer_class = ImageSearchSerializer
     permission_classes = [IsAuthenticated]
