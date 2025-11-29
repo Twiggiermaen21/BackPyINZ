@@ -31,8 +31,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 load_dotenv()
 from django.utils.encoding import force_str
 
-
-
 class UpdateProfileImageView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated]
 

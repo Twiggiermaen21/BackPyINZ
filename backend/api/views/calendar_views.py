@@ -148,6 +148,46 @@ class CalendarByProjectView(generics.ListAPIView):
         return qs
 
 
+class CalendarByIdView(generics.RetrieveAPIView):
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "pk"   # domyślnie może być też 'pk'
+
+    def get_queryset(self):
+        user = self.request.user
+
+        qs = Calendar.objects.filter(author=user).select_related(
+            "top_image",
+            "year_data",
+            "field1_content_type",
+            "field2_content_type",
+            "field3_content_type",
+            "bottom_content_type",
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
+            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
+            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
+            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
+            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch(
+                "imageforfield_set",
+                queryset=ImageForField.objects.filter(user=user),
+                to_attr="prefetched_images_for_fields",
+            )
+        )
+
+        return qs
+
+
 class CalendarCreateView(generics.ListCreateAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
@@ -394,6 +434,7 @@ class CalendarSearchBarView(generics.ListAPIView):
 
 class CalendarPrint(generics.CreateAPIView):
 
+
     def create(self, request, *args, **kwargs):
         try:
             calendar_id = request.data.get("id_kalendarz")
@@ -611,3 +652,40 @@ class CalendarPrint(generics.CreateAPIView):
         except Exception as e:
             print("Unexpected error:", e)
             return Response({"error": str(e)}, status=500)
+
+
+class CalendarProductionListAdd(generics.ListCreateAPIView):
+    queryset = CalendarProduction.objects.select_related("calendar", "author")
+    serializer_class = CalendarProductionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return self.queryset.order_by("-created_at")
+
+class CalendarProductionList(generics.ListAPIView):
+    serializer_class = CalendarProductionSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CalendarPagination 
+
+    def get_queryset(self):
+        qs = CalendarProduction.objects.filter(author=self.request.user).select_related("calendar").order_by("-created_at")
+        return qs
+     
+
+class CalendarListStaff(generics.ListAPIView):
+    serializer_class = CalendarSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CalendarPagination 
+
+    def get_queryset(self):
+        if not self.request.user.is_staff:
+            return Calendar.objects.none()  # pusta lista dla zwykłych użytkowników
+        qs = Calendar.objects.all().select_related(
+            "top_image",
+            "year_data",
+            "field1_content_type",
+            "field2_content_type",
+            "field3_content_type",
+            "bottom_content_type",
+        ).order_by("-created_at")
+        return qs

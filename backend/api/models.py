@@ -65,6 +65,45 @@ class Calendar(models.Model):
     bottom_object_id = models.PositiveIntegerField(null=True, blank=True)
     bottom = GenericForeignKey("bottom_content_type", "bottom_object_id")
 
+class CalendarProduction(models.Model):
+    STATUS_CHOICES = (
+        ("draft", "Projekt"),
+        ("to_produce", "Do produkcji"),
+        ("in_production", "W produkcji"),
+        ("done", "Gotowy"),
+        ("archived", "Zarchiwizowany"),
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    author = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    calendar = models.OneToOneField(
+        Calendar,
+        on_delete=models.CASCADE,
+        related_name="production"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="draft"
+    )
+
+    # produkcyjne dane
+    quantity = models.PositiveIntegerField(default=1)  # ilość egzemplarzy
+    deadline = models.DateField(null=True, blank=True)  # termin produkcji
+    production_note = models.TextField(blank=True)
+
+    # kiedy faktycznie zakończono
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.calendar.name} - {self.get_status_display()}"
+
 
 class CalendarMonthFieldText(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)

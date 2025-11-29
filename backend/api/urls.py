@@ -19,9 +19,13 @@ path("images-by-project/<str:project_name>/", ImagesByProjectView.as_view()),
     path("calendar/<int:pk>/", CalendarUpdateView.as_view(), name="calendar-update"),
     path("calendar-destroy/<int:pk>/", CalendarDetailView.as_view(), name="calendar-detail"),
     path("calendar-print/", CalendarPrint.as_view(), name="calendar-print"),
+    path("production/", CalendarProductionListAdd.as_view(), name="calendar-production-list-add"),
+    path( "production-list/",CalendarProductionList.as_view(),name="calendar-production-list"),
 
-    path("calendar-by-project/<str:project_name>/", CalendarByProjectView.as_view()),
 
+
+    path("calendar-by-project/<str:project_name>/", CalendarByProjectView.as_view(),name="calendar-by-project"),
+    path("calendar/<int:pk>/", CalendarByIdView.as_view(),name="calendar-by-id"),
 
     path("calendar-search/", CalendarSearchBarView.as_view(), name="calendar-search"),
     path("image-search/", ImageSearchBarView.as_view(), name="image-search"),

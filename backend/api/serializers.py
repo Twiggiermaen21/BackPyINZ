@@ -383,6 +383,37 @@ class CalendarSerializer(serializers.ModelSerializer):
     def get_images_for_fields(self, obj):
         return [ImageForFieldSerializer(f).data for f in getattr(obj, "prefetched_images_for_fields", [])]
 
+from rest_framework import serializers
+from .models import CalendarProduction
+
+
+class CalendarProductionSerializer(serializers.ModelSerializer):
+    calendar_name = serializers.CharField(source='calendar.name', read_only=True)
+
+    class Meta:
+        model = CalendarProduction
+        fields = [
+            "id",
+            "calendar",
+            "calendar_name", 
+            "status",
+            "quantity",
+            "deadline",
+            "production_note",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["status", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        validated_data["author"] = request.user
+        validated_data["status"] = "to_produce"
+        return super().create(validated_data)
+
+
+
+
 class OutpaintingSDXLSerializer(serializers.ModelSerializer):
     class Meta:
         model = OutpaintingSDXL
