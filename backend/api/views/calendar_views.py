@@ -9,7 +9,7 @@ from ..pagination import *
 from ..utils.cloudinary_upload import upload_image
 from rest_framework.exceptions import ValidationError
 import json
-from rest_framework import generics, status, response
+from rest_framework import generics, status, response, permissions
 from django.conf import settings
 import requests
 import os
@@ -653,39 +653,111 @@ class CalendarPrint(generics.CreateAPIView):
             print("Unexpected error:", e)
             return Response({"error": str(e)}, status=500)
 
-
-class CalendarProductionListAdd(generics.ListCreateAPIView):
-    queryset = CalendarProduction.objects.select_related("calendar", "author")
+class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated]
 
+    lookup_field = 'pk' 
+    
     def get_queryset(self):
-        return self.queryset.order_by("-created_at")
-
-class CalendarProductionList(generics.ListAPIView):
+        
+        user = self.request.user
+        return (
+            CalendarProduction.objects
+            .filter(author=user)
+            .select_related("calendar", "author")
+        )
+class CalendarProductionList(generics.ListCreateAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = CalendarPagination 
+    pagination_class = CalendarPagination
 
     def get_queryset(self):
-        qs = CalendarProduction.objects.filter(author=self.request.user).select_related("calendar").order_by("-created_at")
-        return qs
-     
+        user = self.request.user
+        return (
+            CalendarProduction.objects
+            .filter(author=user)
+            .select_related("calendar", "author")
+            .order_by("-created_at")
+        )
 
-class CalendarListStaff(generics.ListAPIView):
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
+
+
+class IsStaffPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
+
+
+class CalendarProductionStaffList(generics.ListAPIView):
+    serializer_class = CalendarProductionSerializer
+    permission_classes = [IsAuthenticated,IsStaffPermission]
+    pagination_class = CalendarPagination
+
+    def get_queryset(self):
+        return (
+            CalendarProduction.objects
+            .select_related("calendar", "author")
+            .order_by("-created_at")
+        )
+
+    
+
+
+class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
+    serializer_class = CalendarProductionSerializer
+    permission_classes = [IsAuthenticated, IsStaffPermission]
+    lookup_field = 'pk'
+
+   
+
+    def get_queryset(self):
+        return CalendarProduction.objects.all()
+
+    def perform_update(self, serializer):
+        print( "StaffCalendarProductionRetrieveUpdate view initialized" )
+        print(self.request.data)
+   
+   
+        # automatycznie zaktualizuje updated_at dzięki auto_now=True w modelu
+        serializer.save()
+
+class CalendarByIdStaffView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = CalendarPagination 
+    lookup_url_kwarg = "pk"   # domyślnie może być też 'pk'
 
     def get_queryset(self):
-        if not self.request.user.is_staff:
-            return Calendar.objects.none()  # pusta lista dla zwykłych użytkowników
-        qs = Calendar.objects.all().select_related(
+      
+
+        qs = Calendar.objects.select_related(
             "top_image",
             "year_data",
             "field1_content_type",
             "field2_content_type",
             "field3_content_type",
             "bottom_content_type",
-        ).order_by("-created_at")
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
+            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
+            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
+            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
+            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
+        )
+
+        qs = qs.prefetch_related(
+            Prefetch(
+                "imageforfield_set",
+               queryset=ImageForField.objects.all(),
+                to_attr="prefetched_images_for_fields",
+            )
+        )
+
         return qs

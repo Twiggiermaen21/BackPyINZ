@@ -5,7 +5,7 @@ from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, password_validation
 from django.utils.http import urlsafe_base64_decode
-
+from django.utils import timezone
 class ProfileImageSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
 
@@ -386,7 +386,6 @@ class CalendarSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import CalendarProduction
 
-
 class CalendarProductionSerializer(serializers.ModelSerializer):
     calendar_name = serializers.CharField(source='calendar.name', read_only=True)
 
@@ -408,10 +407,24 @@ class CalendarProductionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context["request"]
         validated_data["author"] = request.user
-        validated_data["status"] = "to_produce"
+        validated_data["status"] = "waiting"   # spójne z frontendem
         return super().create(validated_data)
+    
+    def update(self, instance):
+        # logowanie danych do debugowania
+        print("Updating CalendarProduction instance with data:", self.context["request"].data)
 
+        # pobranie statusu z requestu
+        status = self.context["request"].data.get("status", instance.status)
+        instance.status = status
 
+       
+        # jeśli status to 'done' lub 'rejected', ustaw finished_at na aktualny czas
+        if status in ["done", "rejected"]:
+            instance.finished_at = timezone.now()
+
+        instance.save()
+        return instance
 
 
 class OutpaintingSDXLSerializer(serializers.ModelSerializer):

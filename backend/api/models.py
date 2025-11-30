@@ -68,6 +68,7 @@ class Calendar(models.Model):
 class CalendarProduction(models.Model):
     STATUS_CHOICES = (
         ("draft", "Projekt"),
+        ("rejected", "Odrzucony"),
         ("to_produce", "Do produkcji"),
         ("in_production", "W produkcji"),
         ("done", "Gotowy"),
