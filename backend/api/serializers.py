@@ -386,6 +386,9 @@ class CalendarSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import CalendarProduction
 
+from django.utils import timezone
+from rest_framework import serializers
+
 class CalendarProductionSerializer(serializers.ModelSerializer):
     calendar_name = serializers.CharField(source='calendar.name', read_only=True)
 
@@ -401,31 +404,33 @@ class CalendarProductionSerializer(serializers.ModelSerializer):
             "production_note",
             "created_at",
             "updated_at",
+            "finished_at",
         ]
-        read_only_fields = ["status", "created_at", "updated_at"]
+        read_only_fields = ["status", "created_at", "updated_at", "finished_at"]
 
     def create(self, validated_data):
         request = self.context["request"]
         validated_data["author"] = request.user
         validated_data["status"] = "waiting"   # spójne z frontendem
         return super().create(validated_data)
-    
-    def update(self, instance):
-        # logowanie danych do debugowania
+
+    def update(self, instance, validated_data):
         print("Updating CalendarProduction instance with data:", self.context["request"].data)
 
-        # pobranie statusu z requestu
         status = self.context["request"].data.get("status", instance.status)
         instance.status = status
 
-       
-        # jeśli status to 'done' lub 'rejected', ustaw finished_at na aktualny czas
+        # inne pola aktualizuj normalnie (jeśli kiedyś będą edytowane)
+        instance.quantity = validated_data.get("quantity", instance.quantity)
+        instance.deadline = validated_data.get("deadline", instance.deadline)
+        instance.production_note = validated_data.get("production_note", instance.production_note)
+
+        # ✅ AUTOMATYCZNE ZAKOŃCZENIE
         if status in ["done", "rejected"]:
             instance.finished_at = timezone.now()
 
         instance.save()
         return instance
-
 
 class OutpaintingSDXLSerializer(serializers.ModelSerializer):
     class Meta:

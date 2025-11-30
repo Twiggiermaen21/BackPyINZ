@@ -667,6 +667,7 @@ class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
             .filter(author=user)
             .select_related("calendar", "author")
         )
+
 class CalendarProductionList(generics.ListCreateAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated]

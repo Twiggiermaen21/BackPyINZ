@@ -82,9 +82,8 @@ class CalendarProduction(models.Model):
         User, on_delete=models.SET_NULL, null=True, blank=True
     )
 
-    calendar = models.OneToOneField(
-        Calendar,
-        on_delete=models.CASCADE,
+    calendar = models.ForeignKey(Calendar, on_delete=models.CASCADE
+        ,
         related_name="production"
     )
 
