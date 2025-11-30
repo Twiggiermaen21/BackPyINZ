@@ -434,17 +434,17 @@ class CalendarSearchBarView(generics.ListAPIView):
 
 class CalendarPrint(generics.CreateAPIView):
 
-
     def create(self, request, *args, **kwargs):
         try:
+            print("📥 Otrzymano żądanie eksportu kalendarza:", request.data)
             calendar_id = request.data.get("id_kalendarz")
             if not calendar_id:
                 return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)
 
-            qs = Calendar.objects.filter(author=self.request.user, id=calendar_id).prefetch_related(
+            qs = Calendar.objects.filter( id=calendar_id).prefetch_related(
                 Prefetch(
                     "imageforfield_set",
-                    queryset=ImageForField.objects.filter(user=self.request.user),
+                    queryset=ImageForField.objects.all(),
                     to_attr="prefetched_images_for_fields"
                 )
             )
@@ -452,7 +452,7 @@ class CalendarPrint(generics.CreateAPIView):
             if not calendar:
                 return Response({"error": f"Nie znaleziono kalendarza o id {calendar_id}"}, status=404)
 
-            export_dir = os.path.join(settings.MEDIA_ROOT, "calendar_exports", str(calendar_id))
+            export_dir = os.path.join(settings.MEDIA_ROOT, "calendar_exports", str(uuid.uuid4()))
             os.makedirs(export_dir, exist_ok=True)
 
             data = {
@@ -731,7 +731,6 @@ class CalendarByIdStaffView(generics.RetrieveAPIView):
 
     def get_queryset(self):
       
-
         qs = Calendar.objects.select_related(
             "top_image",
             "year_data",

@@ -25,7 +25,7 @@ class GenerateImage(generics.ListCreateAPIView):
 
         prompt = data.get('prompt', None)
         width = 1792
-        height = 1232
+        height = 1200
         user = self.request.user 
         print(f"👤 Użytkownik: {user}")
         print(f"🧠 Prompt: {prompt}")

@@ -1,0 +1,25 @@
+{
+    "calendar_id": 90,
+    "author": "123kacper",
+    "created_at": "2025-11-04 18:29:31.477623+00:00",
+    "fields": {
+        "1": {
+            "field_number": 1,
+            "positionX": "176",
+            "positionY": "6",
+            "size": 1
+        },
+        "2": null,
+        "3": null,
+        "prefetched_image_10": {
+            "field_number": 1,
+            "image_url": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\90\\fieldprefetched_image_10_generated_323b74b81d3c43d19107da15c47dae79.png"
+        }
+    },
+    "bottom": {
+        "type": "image",
+        "path": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\90\\bottom_image_generated_b163444da3ed493a8878d8d0210ca2fa.jpg"
+    },
+    "top_image": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\90\\top_image_generated_276d55192b284f0a82ac0dcc3a6fe50a.jpg",
+    "year": null
+}
