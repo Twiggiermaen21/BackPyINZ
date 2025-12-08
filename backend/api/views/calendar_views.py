@@ -11,11 +11,17 @@ from rest_framework.exceptions import ValidationError
 import json
 from rest_framework import generics, status, response, permissions
 from django.conf import settings
-import requests
-import os
-import cloudinary.uploader
-from PIL import Image, ImageDraw, ImageFont
 
+import os
+
+from ..utils.services import (
+    fetch_calendar_data, 
+    get_year_data, 
+    handle_field_data, 
+    handle_bottom_data,
+    handle_top_image,
+    process_top_image_with_year
+)
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
@@ -431,7 +437,6 @@ class CalendarSearchBarView(generics.ListAPIView):
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
-
 class CalendarPrint(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
@@ -441,20 +446,18 @@ class CalendarPrint(generics.CreateAPIView):
             if not calendar_id:
                 return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)
 
-            qs = Calendar.objects.filter( id=calendar_id).prefetch_related(
-                Prefetch(
-                    "imageforfield_set",
-                    queryset=ImageForField.objects.all(),
-                    to_attr="prefetched_images_for_fields"
-                )
-            )
-            calendar = qs.first()
+            # 1. Pobieranie danych kalendarza
+            calendar = fetch_calendar_data(calendar_id)
             if not calendar:
                 return Response({"error": f"Nie znaleziono kalendarza o id {calendar_id}"}, status=404)
 
+            # 2. Tworzenie katalogu eksportu
             export_dir = os.path.join(settings.MEDIA_ROOT, "calendar_exports", str(uuid.uuid4()))
             os.makedirs(export_dir, exist_ok=True)
+            print(f"📁 Utworzono katalog eksportu: {export_dir}")
 
+
+            # 3. Przygotowanie struktury danych JSON
             data = {
                 "calendar_id": calendar.id,
                 "author": str(calendar.author),
@@ -462,304 +465,62 @@ class CalendarPrint(generics.CreateAPIView):
                 "fields": {},
                 "bottom": None,
                 "top_image": None,
-                "year": None,
+                
+                "year": get_year_data(calendar), # Pobieranie danych roku
             }
 
-            # Rok
-            if getattr(calendar, "year_data_id", None):
-                year_data_obj = CalendarYearData.objects.filter(id=calendar.year_data_id).first()
-                if year_data_obj:
-                    data["year"] = {
-                        "text": year_data_obj.text,
-                        "font": year_data_obj.font,
-                        "weight": year_data_obj.weight,
-                        "size": year_data_obj.size,
-                        "color": year_data_obj.color,
-                        "positionX": year_data_obj.positionX,
-                        "positionY": year_data_obj.positionY,
-                    }
-
-            def handle_field(field_obj, field_number):
-                """Zwraca dane pola obrazkowego lub tekstowego bez pobierania plików."""
-                if not field_obj:
-                    return None
-
-                # Jeśli pole ma atrybut 'path' lub 'value', traktujemy je jako obraz
-                if hasattr(field_obj, "positionX") and hasattr(field_obj, "size"):
-                 
-                    return {
-                        "field_number": field_number,
-                        "positionX": getattr(field_obj, "positionX", None),
-                        "positionY": getattr(field_obj, "positionY", None),
-                        "size": getattr(field_obj, "size", None),
-                    }
-                
-                if hasattr(field_obj, "url"):
-                    image_url = getattr(field_obj, "path", None) or getattr(field_obj, "url", None)
-                    
-               
-                    if image_url:
-                        try:
-                     
-                            response = requests.get(image_url, stream=True)
-                            if response.status_code == 200:
-                                filename = f"field{field_number}_{os.path.basename(image_url)}"
-                                dest = os.path.join(export_dir, filename)
-                                with open(dest, "wb") as f:
-                                    for chunk in response.iter_content(1024):
-                                        f.write(chunk)
-                                return {
-                                        "field_number": field_obj.field_number ,
-                                        "image_url": dest
-                                    }
-                        except Exception as e:
-                            print(f"Error downloading field{field_number}: {e}")
-                            return None
-
-                # Jeśli pole ma tekst
-                if hasattr(field_obj, "text") and field_obj.text:
-                    return {
-                        "text": field_obj.text,
-                        "font": getattr(field_obj, "font", None),
-                        "weight": getattr(field_obj, "weight", None)
-                    }
-
-                return None
-           
-            def handle_bottom(bottom_obj):
-                    if not bottom_obj:
-                        return None
-
-                    # ================= OBRAZ =================
-                    if isinstance(bottom_obj, BottomImage) and bottom_obj.image:
-                        image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
-                        print(f"Bottom image URL: {image_url}")
-                               
-
-                        return {"type": "image", "url": image_url}
-
-                    # ================= KOLOR =================
-                    elif isinstance(bottom_obj, BottomColor):
-                        img = Image.new("RGB", (1200, 8000), bottom_obj.color)
-                        filename = os.path.join(export_dir, "bottom_color.png")
-                        img.save(filename)
-
-                        try:
-                            upload_result = cloudinary.uploader.upload(
-                                filename, 
-                                folder="calendar_exports" 
-                            )
-                            
-                            # 2. Pobranie publicznego URL
-                            cloudinary_url = upload_result.get("secure_url")
-                            print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
-                            
-                            # Opcjonalnie: Usuń lokalny plik, jeśli nie jest już potrzebny
-                            os.remove(filename)
-                            print(f"🗑️ Usunięto lokalny plik: {filename}")
-
-                        except Exception as cloudinary_error:
-                            print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
-                            # W przypadku błędu Cloudinary, możemy ustawić URL na None
-                            cloudinary_url = None
+            # 4. Obsługa Top Image (pobieranie lokalne, jeśli ma być naniesiony rok)
+            # data["top_image"] będzie albo URL, albo lokalną ścieżką
+            data["top_image"] = handle_top_image(calendar, export_dir)
 
 
+            # 5. Obsługa Bottom (obraz, kolor, gradient)
+            data["bottom"] = handle_bottom_data(calendar.bottom, export_dir)
 
-
-
-                        return {
-                            "type": "color",
-                            "color": bottom_obj.color,
-                            "path": filename
-                        }
-
-                    # ================= GRADIENT =================
-                    elif isinstance(bottom_obj, BottomGradient):
-
-                        def hex_to_rgb(hex_color):
-                            hex_color = hex_color.lstrip("#")
-                            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-                        start_rgb = hex_to_rgb(bottom_obj.start_color)
-                        end_rgb = hex_to_rgb(bottom_obj.end_color)
-
-                        width, height = 1200, 8000
-                        filename = os.path.join(export_dir, "bottom_gradient.png")
-
-                        img = Image.new("RGB", (width, height))
-                        pixels = img.load()
-
-                        if bottom_obj.direction == "to right":
-                            for x in range(width):
-                                ratio = x / width
-                                r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
-                                g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
-                                b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
-                                for y in range(height):
-                                    pixels[x, y] = (r, g, b)
-                        else:  # to bottom
-                            for y in range(height):
-                                ratio = y / height
-                                r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
-                                g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
-                                b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
-                                for x in range(width):
-                                    pixels[x, y] = (r, g, b)
-
-                        img.save(filename)
-                        try:
-                            upload_result = cloudinary.uploader.upload(
-                                filename, 
-                                folder="calendar_exports" 
-                            )
-                            
-                            # 2. Pobranie publicznego URL
-                            cloudinary_url = upload_result.get("secure_url")
-                            print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
-                            
-                            # Opcjonalnie: Usuń lokalny plik, jeśli nie jest już potrzebny
-                            os.remove(filename)
-                            print(f"🗑️ Usunięto lokalny plik: {filename}")
-
-                        except Exception as cloudinary_error:
-                            print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
-                            # W przypadku błędu Cloudinary, możemy ustawić URL na None
-                            cloudinary_url = None
-
-
-                        gradient_css = f"linear-gradient({bottom_obj.direction or 'to bottom'}, {bottom_obj.start_color}, {bottom_obj.end_color})"
-
-                        return {
-                            "type": "gradient",
-                            "start_color": bottom_obj.start_color,
-                            "end_color": bottom_obj.end_color,
-                            "direction": bottom_obj.direction,
-                            "strength": bottom_obj.strength,
-                            "theme": bottom_obj.theme,
-                            "css": gradient_css,
-                            "path": filename
-                        }
-
-                    return None
-
-                    
-          
-            # Top image
-            if calendar.top_image_id:
-                try:
-                    gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
-                    if gen_img.url:
-                        
-                        filename = f"top_image_{os.path.basename(gen_img.url)}"
-                        dest = os.path.join(export_dir, filename)
-                    
-                        if data.get("year"):
-                            try:
-                                response = requests.get(gen_img.url, stream=True)
-                                if response.status_code == 200:
-                                    with open(dest, "wb") as f:
-                                        for chunk in response.iter_content(1024):
-                                            f.write(chunk)
-                                    data["top_image"] = dest
-                            except Exception as e:
-                                print(f"Error downloading top_image: {e}")
-                        else:
-                            print(f"Top image URL: {gen_img.url}")
-                            data["top_image"] = gen_img.url
-                except GeneratedImage.DoesNotExist:
-                    data["top_image"] = None
-
-            # Bottom
-            bottom_obj = calendar.bottom  # pobranie GenericForeignKey
-            data["bottom"] = handle_bottom(bottom_obj)
-            # Połączone pola: field1-3 + prefetched images
+            # 6. Obsługa pól (Field1-3 + prefetched)
             all_fields = []
-
-            # Fields 1–3
             for i in range(1, 4):
                 all_fields.append((getattr(calendar, f"field{i}", None), i))
-               
-
-            # Prefetched images
             for img in getattr(calendar, "prefetched_images_for_fields", []):
                 all_fields.append((img, f"prefetched_image_{img.id}"))
 
-            # Obsługujemy wszystkie pola jednym wywołaniem handle_field
             for field_obj, field_name in all_fields:
-                data["fields"][field_name] = handle_field(field_obj, field_name)
+                data["fields"][field_name] = handle_field_data(field_obj, field_name, export_dir)
 
-            # Zapis JSON
+            
+           
+
+            # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
+            cloudinary_url = None
+            if data["top_image"] and data.get("year"):
+                cloudinary_url, _ = process_top_image_with_year(calendar, data, export_dir)
+                print(f"☁️ Obraz z rokiem wgrany do Cloudinary------------------------------------------: {cloudinary_url}")
+                data["top_image_url"] = cloudinary_url
+            # Jeśli nie było roku, a top_image był URL-em, ustaw go jako wynik
+            elif not data.get("year") and data["top_image"]:
+                 cloudinary_url = data["top_image"]
+            # 8. Zapis JSON
             json_path = os.path.join(export_dir, "data.json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+            print(f"📄 Zapisano plik JSON: {json_path}")
 
-        
-           
-            image = Image.open(data["top_image"])
-            draw = ImageDraw.Draw(image)
 
-           
-            if data.get("year"):
-                try:
-                    font = ImageFont.truetype("times.ttf",int(data["year"]["size"]))
-                except IOError:
-                    # Fallback jeśli nie znajdzie pliku czcionki
-                    font = ImageFont.load_default()
-                    print("⚠️ Nie znaleziono czcionki 'Times New Roman', użyto domyślnej.")
-                try:
-                # Dodaj tekst
-                    draw.text(
-                        (int(data["year"]["positionX"]), int(data["year"]["positionY"])),
-                        data["year"]["text"],
-                        font=font,
-                        fill=data["year"]["color"]
-                    )
 
-                    # Zapisz wynik
-                    output_path = data["top_image"].replace(".jpg", "_with_text.jpg")
-                    image.save(output_path)
-
-                    print(f"✅ Zapisano nowy obraz: {output_path}")
-
-                except Exception as e:
-                    print("⚠️ Błąd rysowania tekstu:", e)
-            
-                try:
-                    upload_result = cloudinary.uploader.upload(
-                        output_path, 
-                        folder="calendar_exports"  )
-                    
-                    cloudinary_url = upload_result.get("secure_url")
-                    print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
-
-                    if os.path.exists(output_path):
-                        os.remove(output_path)
-                        output_path_remove = output_path.replace("_with_text.jpg", ".jpg")
-                    if os.path.exists(output_path_remove):
-                        os.remove(output_path_remove)
-                    print(f"🗑️ Usunięto lokalny plik: {output_path}")
-                    print(f"🗑️ Usunięto lokalny plik: {output_path_remove}") 
-
-                except Exception as cloudinary_error:
-                    print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
-                    # W przypadku błędu Cloudinary, możemy ustawić URL na None
-                    cloudinary_url = None
-            else:
-                print("⚠️ Brak danych YEAR – pomijam rysowanie")                   
-             
-           
+            # 9. Sprzątanie katalogu eksportu (jeśli jest pusty lub ma tylko plik JSON)
+            # Zostaw to jako zadanie dla zewnętrznego joba lub zrób to ostrożnie 
+            # (aby nie usunąć JSONa zanim zostanie przetworzony)
 
             return Response({
-                "message": "Dane kalendarza zostały zapisane i obraz wgrany do Cloudinary.",
+                "message": "Dane kalendarza zostały przetworzone, a obraz wgrany do Cloudinary.",
                 "folder": export_dir,
                 "json_path": json_path,
-                
+                "top_image_final_url": cloudinary_url # Końcowy URL obrazu z naniesionym rokiem
             })
 
         except Exception as e:
-            print("Unexpected error:", e)
+            print("❌ Nieoczekiwany błąd:", e)
             return Response({"error": str(e)}, status=500)
-
 
 class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
     serializer_class = CalendarProductionSerializer

@@ -1,0 +1,39 @@
+{
+    "calendar_id": 99,
+    "author": "KacperPudelko",
+    "created_at": "2025-12-08 18:17:21.436610+00:00",
+    "fields": {
+        "1": {
+            "text": "123",
+            "font": "Arial",
+            "weight": "400"
+        },
+        "2": {
+            "text": "243",
+            "font": "Arial",
+            "weight": "400"
+        },
+        "3": {
+            "text": "3242",
+            "font": "Arial",
+            "weight": "400"
+        }
+    },
+    "bottom": {
+        "type": "color",
+        "color": "#ada7aa",
+        "path": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\3d8fc451-f81f-430f-863e-863c5bd40123\\bottom_color.png",
+        "cloudinary_url": "https://res.cloudinary.com/dhgml9qt5/image/upload/v1765224232/calendar_exports/zdqbltlvynorwvmzqtrq.png"
+    },
+    "top_image": "D:\\visualstudio\\inz\\BackPy\\backend\\media\\calendar_exports\\3d8fc451-f81f-430f-863e-863c5bd40123\\top_image_generated_3900f222e42645b68ef468ba978a7fb7.jpg",
+    "top_image_final_url": null,
+    "year": {
+        "text": "2025",
+        "font": "Arial",
+        "weight": "bold",
+        "size": "32",
+        "color": "#ffffff",
+        "positionX": "50",
+        "positionY": "20"
+    }
+}
