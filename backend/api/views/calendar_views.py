@@ -13,7 +13,7 @@ from rest_framework import generics, status, response, permissions
 from django.conf import settings
 import requests
 import os
-
+import cloudinary.uploader
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -527,65 +527,145 @@ class CalendarPrint(generics.CreateAPIView):
                 return None
            
             def handle_bottom(bottom_obj):
-                if not bottom_obj:
+                    if not bottom_obj:
+                        return None
+
+                    # ================= OBRAZ =================
+                    if isinstance(bottom_obj, BottomImage) and bottom_obj.image:
+                        image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
+                        print(f"Bottom image URL: {image_url}")
+                               
+
+                        return {"type": "image", "url": image_url}
+
+                    # ================= KOLOR =================
+                    elif isinstance(bottom_obj, BottomColor):
+                        img = Image.new("RGB", (1200, 8000), bottom_obj.color)
+                        filename = os.path.join(export_dir, "bottom_color.png")
+                        img.save(filename)
+
+                        try:
+                            upload_result = cloudinary.uploader.upload(
+                                filename, 
+                                folder="calendar_exports" 
+                            )
+                            
+                            # 2. Pobranie publicznego URL
+                            cloudinary_url = upload_result.get("secure_url")
+                            print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
+                            
+                            # Opcjonalnie: Usuń lokalny plik, jeśli nie jest już potrzebny
+                            os.remove(filename)
+                            print(f"🗑️ Usunięto lokalny plik: {filename}")
+
+                        except Exception as cloudinary_error:
+                            print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
+                            # W przypadku błędu Cloudinary, możemy ustawić URL na None
+                            cloudinary_url = None
+
+
+
+
+
+                        return {
+                            "type": "color",
+                            "color": bottom_obj.color,
+                            "path": filename
+                        }
+
+                    # ================= GRADIENT =================
+                    elif isinstance(bottom_obj, BottomGradient):
+
+                        def hex_to_rgb(hex_color):
+                            hex_color = hex_color.lstrip("#")
+                            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+                        start_rgb = hex_to_rgb(bottom_obj.start_color)
+                        end_rgb = hex_to_rgb(bottom_obj.end_color)
+
+                        width, height = 1200, 8000
+                        filename = os.path.join(export_dir, "bottom_gradient.png")
+
+                        img = Image.new("RGB", (width, height))
+                        pixels = img.load()
+
+                        if bottom_obj.direction == "to right":
+                            for x in range(width):
+                                ratio = x / width
+                                r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
+                                g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
+                                b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
+                                for y in range(height):
+                                    pixels[x, y] = (r, g, b)
+                        else:  # to bottom
+                            for y in range(height):
+                                ratio = y / height
+                                r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
+                                g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
+                                b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
+                                for x in range(width):
+                                    pixels[x, y] = (r, g, b)
+
+                        img.save(filename)
+                        try:
+                            upload_result = cloudinary.uploader.upload(
+                                filename, 
+                                folder="calendar_exports" 
+                            )
+                            
+                            # 2. Pobranie publicznego URL
+                            cloudinary_url = upload_result.get("secure_url")
+                            print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
+                            
+                            # Opcjonalnie: Usuń lokalny plik, jeśli nie jest już potrzebny
+                            os.remove(filename)
+                            print(f"🗑️ Usunięto lokalny plik: {filename}")
+
+                        except Exception as cloudinary_error:
+                            print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
+                            # W przypadku błędu Cloudinary, możemy ustawić URL na None
+                            cloudinary_url = None
+
+
+                        gradient_css = f"linear-gradient({bottom_obj.direction or 'to bottom'}, {bottom_obj.start_color}, {bottom_obj.end_color})"
+
+                        return {
+                            "type": "gradient",
+                            "start_color": bottom_obj.start_color,
+                            "end_color": bottom_obj.end_color,
+                            "direction": bottom_obj.direction,
+                            "strength": bottom_obj.strength,
+                            "theme": bottom_obj.theme,
+                            "css": gradient_css,
+                            "path": filename
+                        }
+
                     return None
 
-                        # Obraz
-                if isinstance(bottom_obj, BottomImage) and bottom_obj.image:
-                    image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
-                    if image_url and export_dir:
-                        try:
-                            import requests, os
-                            filename = f"bottom_image_{os.path.basename(image_url)}"
-                            dest = os.path.join(export_dir, filename)
-                            response = requests.get(image_url, stream=True)
-                            if response.status_code == 200:
-                                with open(dest, "wb") as f:
-                                    for chunk in response.iter_content(1024):
-                                        f.write(chunk)
-                                return {"type": "image", "path": dest}
-                        except Exception as e:
-                            print(f"Error downloading bottom image: {e}")
-                            return {"type": "image", "url": image_url}
-                    return {"type": "image", "url": image_url}
-
-                # Kolor
-                elif isinstance(bottom_obj, BottomColor):
-                    return {
-                        "type": "color",
-                        "color": bottom_obj.color
-                    }
-
-                # Gradient
-                elif isinstance(bottom_obj, BottomGradient):
-                    gradient_css = f"linear-gradient({bottom_obj.direction or 'to bottom'}, {bottom_obj.start_color}, {bottom_obj.end_color})"
-                    return {
-                        "type": "gradient",
-                        "start_color": bottom_obj.start_color,
-                        "end_color": bottom_obj.end_color,
-                        "direction": bottom_obj.direction,
-                        "strength": bottom_obj.strength,
-                        "theme": bottom_obj.theme,
-                        "css": gradient_css
-                }
-
-                return None
+                    
+          
             # Top image
             if calendar.top_image_id:
                 try:
                     gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
                     if gen_img.url:
+                        
                         filename = f"top_image_{os.path.basename(gen_img.url)}"
                         dest = os.path.join(export_dir, filename)
-                        try:
-                            response = requests.get(gen_img.url, stream=True)
-                            if response.status_code == 200:
-                                with open(dest, "wb") as f:
-                                    for chunk in response.iter_content(1024):
-                                        f.write(chunk)
-                                data["top_image"] = dest
-                        except Exception as e:
-                            print(f"Error downloading top_image: {e}")
+                    
+                        if data.get("year"):
+                            try:
+                                response = requests.get(gen_img.url, stream=True)
+                                if response.status_code == 200:
+                                    with open(dest, "wb") as f:
+                                        for chunk in response.iter_content(1024):
+                                            f.write(chunk)
+                                    data["top_image"] = dest
+                            except Exception as e:
+                                print(f"Error downloading top_image: {e}")
+                        else:
+                            print(f"Top image URL: {gen_img.url}")
+                            data["top_image"] = gen_img.url
                 except GeneratedImage.DoesNotExist:
                     data["top_image"] = None
 
@@ -614,44 +694,72 @@ class CalendarPrint(generics.CreateAPIView):
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
         
-            # Otwórz obraz
+           
             image = Image.open(data["top_image"])
-
-            # Utwórz kontekst rysowania
             draw = ImageDraw.Draw(image)
 
-            # Spróbuj załadować czcionkę
-            try:
-                font = ImageFont.truetype("times.ttf",int(data["year"]["size"]))
-            except IOError:
-                # Fallback jeśli nie znajdzie pliku czcionki
-                font = ImageFont.load_default()
-                print("⚠️ Nie znaleziono czcionki 'Times New Roman', użyto domyślnej.")
+           
+            if data.get("year"):
+                try:
+                    font = ImageFont.truetype("times.ttf",int(data["year"]["size"]))
+                except IOError:
+                    # Fallback jeśli nie znajdzie pliku czcionki
+                    font = ImageFont.load_default()
+                    print("⚠️ Nie znaleziono czcionki 'Times New Roman', użyto domyślnej.")
+                try:
+                # Dodaj tekst
+                    draw.text(
+                        (int(data["year"]["positionX"]), int(data["year"]["positionY"])),
+                        data["year"]["text"],
+                        font=font,
+                        fill=data["year"]["color"]
+                    )
 
-            # Dodaj tekst
-            draw.text(
-                (int(data["year"]["positionX"]), int(data["year"]["positionY"])),
-                data["year"]["text"],
-                font=font,
-                fill=data["year"]["color"]
-            )
+                    # Zapisz wynik
+                    output_path = data["top_image"].replace(".jpg", "_with_text.jpg")
+                    image.save(output_path)
 
-            # Zapisz wynik
-            output_path = data["top_image"].replace(".jpg", "_with_text.jpg")
-            image.save(output_path)
+                    print(f"✅ Zapisano nowy obraz: {output_path}")
 
-            print(f"✅ Zapisano nowy obraz: {output_path}")
-                        
+                except Exception as e:
+                    print("⚠️ Błąd rysowania tekstu:", e)
+            
+                try:
+                    upload_result = cloudinary.uploader.upload(
+                        output_path, 
+                        folder="calendar_exports"  )
+                    
+                    cloudinary_url = upload_result.get("secure_url")
+                    print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
+
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                        output_path_remove = output_path.replace("_with_text.jpg", ".jpg")
+                    if os.path.exists(output_path_remove):
+                        os.remove(output_path_remove)
+                    print(f"🗑️ Usunięto lokalny plik: {output_path}")
+                    print(f"🗑️ Usunięto lokalny plik: {output_path_remove}") 
+
+                except Exception as cloudinary_error:
+                    print(f"❌ Błąd podczas wgrywania do Cloudinary: {cloudinary_error}")
+                    # W przypadku błędu Cloudinary, możemy ustawić URL na None
+                    cloudinary_url = None
+            else:
+                print("⚠️ Brak danych YEAR – pomijam rysowanie")                   
+             
+           
 
             return Response({
-                "message": "Dane kalendarza zostały zapisane do folderu.",
+                "message": "Dane kalendarza zostały zapisane i obraz wgrany do Cloudinary.",
                 "folder": export_dir,
                 "json_path": json_path,
+                
             })
 
         except Exception as e:
             print("Unexpected error:", e)
             return Response({"error": str(e)}, status=500)
+
 
 class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
     serializer_class = CalendarProductionSerializer
@@ -667,6 +775,7 @@ class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
             .filter(author=user)
             .select_related("calendar", "author")
         )
+
 
 class CalendarProductionList(generics.ListCreateAPIView):
     serializer_class = CalendarProductionSerializer
@@ -704,8 +813,6 @@ class CalendarProductionStaffList(generics.ListAPIView):
         )
 
     
-
-
 class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated, IsStaffPermission]
@@ -723,6 +830,7 @@ class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
    
         # automatycznie zaktualizuje updated_at dzięki auto_now=True w modelu
         serializer.save()
+
 
 class CalendarByIdStaffView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
