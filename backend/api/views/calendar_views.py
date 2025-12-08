@@ -22,6 +22,7 @@ from ..utils.services import (
     handle_top_image,
     process_top_image_with_year
 )
+from ..utils.upscaling import upscale_image_with_bigjpg
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
@@ -465,7 +466,7 @@ class CalendarPrint(generics.CreateAPIView):
                 "fields": {},
                 "bottom": None,
                 "top_image": None,
-                
+                "top_image_url": None,
                 "year": get_year_data(calendar), # Pobieranie danych roku
             }
 
@@ -487,18 +488,15 @@ class CalendarPrint(generics.CreateAPIView):
             for field_obj, field_name in all_fields:
                 data["fields"][field_name] = handle_field_data(field_obj, field_name, export_dir)
 
-            
-           
-
             # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
             cloudinary_url = None
             if data["top_image"] and data.get("year"):
                 cloudinary_url, _ = process_top_image_with_year(calendar, data, export_dir)
-                print(f"☁️ Obraz z rokiem wgrany do Cloudinary------------------------------------------: {cloudinary_url}")
                 data["top_image_url"] = cloudinary_url
             # Jeśli nie było roku, a top_image był URL-em, ustaw go jako wynik
             elif not data.get("year") and data["top_image"]:
                  cloudinary_url = data["top_image"]
+                 data["top_image_url"] = data["top_image"]
             # 8. Zapis JSON
             json_path = os.path.join(export_dir, "data.json")
             with open(json_path, "w", encoding="utf-8") as f:
@@ -506,6 +504,13 @@ class CalendarPrint(generics.CreateAPIView):
             print(f"📄 Zapisano plik JSON: {json_path}")
 
 
+            with open(json_path, "r", encoding="utf-8") as f:
+                loaded_data = json.load(f)
+            
+            if (loaded_data["top_image_url"] ):
+                 upscale_image_with_bigjpg(loaded_data["top_image_url"])
+            if (loaded_data["bottom"]['type'] == 'image' ):
+                 upscale_image_with_bigjpg(loaded_data["bottom"]["url"])
 
             # 9. Sprzątanie katalogu eksportu (jeśli jest pusty lub ma tylko plik JSON)
             # Zostaw to jako zadanie dla zewnętrznego joba lub zrób to ostrożnie 
