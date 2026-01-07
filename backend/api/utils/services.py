@@ -6,7 +6,7 @@ import requests
 import json
 from django.conf import settings
 from django.db.models import Prefetch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # Importy modeli (zakładam, że są zdefiniowane w innej części projektu, np. .models)
 # Trzeba zaimportować rzeczywiste modele Calendar, CalendarYearData, GeneratedImage, 
@@ -269,12 +269,14 @@ def process_top_image_with_year(top_image_path, data):
 
 
 
-def process_calendar_bottom(data):
+def process_calendar_bottom(data, upscaled_top_path=None):
     """
-    Wersja PIONOWA + BIAŁE PROSTOKĄTY:
-    1. Dzieli obraz na 6 wierszy.
-    2. W wierszach parzystych (indeksy 0, 2, 4) umieszcza Field 1, 2, 3.
-    3. W wierszach nieparzystych (indeksy 1, 3, 5) rysuje białe prostokąty 1000px.
+    UKŁAD 7-CZĘŚCIOWY (PIONOWY) + TOP IMAGE:
+    1. Dzieli obraz na 7 wierszy.
+    2. Index 0: Wkleja obraz 'upscaled_top_path' (dopasowany do wymiaru).
+    3. Index 1, 3, 5: Białe prostokąty (spacery).
+    4. Index 2, 4, 6: Field 1, Field 2, Field 3 (treść).
+    Nadpisuje plik źródłowy.
     """
     
     bottom_data = data.get("bottom", {})
@@ -285,56 +287,77 @@ def process_calendar_bottom(data):
         return None
 
     try:
-        # 1. Otwarcie obrazu (do pamięci, żeby móc go potem nadpisać)
+        # 1. Otwarcie obrazu tła (do pamięci)
         with Image.open(base_image_path) as src_img:
             base_img = src_img.convert("RGBA")
 
         img_width, img_height = base_img.size
         draw = ImageDraw.Draw(base_img)
-        print(f"ℹ️ Przetwarzanie {base_image_path} ({img_width}x{img_height})")
+        print(f"ℹ️ Przetwarzanie: {base_image_path} ({img_width}x{img_height})")
 
-        # --- KONFIGURACJA GRIDU ---
-        row_height = img_height / 6
+        # --- KONFIGURACJA GRIDU (7 CZĘŚCI) ---
+        row_height = img_height / 7
         center_x_fixed = img_width / 2 
         
-        # Konfiguracja białych prostokątów
-        rect_height = 600
-        padding_x = 80
+        # Spacer configuration
+        rect_height = 1000
+        padding_x = 10
 
         # =========================================================
-        # KROK A: RYSOWANIE BIAŁYCH PROSTOKĄTÓW (Sloty 1, 3, 5)
+        # KROK A: GŁÓWKA (Index 0) -> UPSCALED IMAGE
         # =========================================================
-        # Indeksy liczone od zera: 1 (drugi rząd), 3 (czwarty rząd), 5 (szósty rząd)
+        # Cel: Wypełnić całą pierwszą sekcję (0 do row_height)
+        target_header_size = (img_width, int(row_height))
+        
+        if upscaled_top_path and os.path.exists(upscaled_top_path):
+            try:
+                with Image.open(upscaled_top_path) as header_src:
+                    header_img = header_src.convert("RGBA")
+                    
+                    # Używamy ImageOps.fit -> to działa jak CSS "object-fit: cover"
+                    # Wycina środek obrazka pasujący do wymiarów, nie deformując go.
+                    header_fitted = ImageOps.fit(header_img, target_header_size, method=Image.Resampling.LANCZOS)
+                    
+                    # Wklejamy na samej górze (0, 0)
+                    base_img.paste(header_fitted, (0, 0))
+                    print(f"🖼️ Wklejono Top Image w sekcji 0: {upscaled_top_path}")
+            except Exception as e:
+                print(f"⚠️ Błąd przy wklejaniu top image: {e}")
+                # Fallback: Białe tło jeśli błąd
+                draw.rectangle([0, 0, img_width, int(row_height)], fill="white")
+        else:
+            # Fallback: Białe tło jeśli brak pliku
+            draw.rectangle([0, 0, img_width, int(row_height)], fill="white")
+            print("⬜ Brak top image, sekcja 0 zamalowana na biało.")
+
+
+        # =========================================================
+        # KROK B: BIAŁE PROSTOKĄTY (Index 1, 3, 5)
+        # =========================================================
         for slot_idx in [1, 3, 5]:
-            # Obliczamy środek danego slotu w pionie
-            # Wzór: wysokość_rzędu * numer_rzędu + połowa_rzędu
             slot_center_y = (row_height * slot_idx) + (row_height / 2)
             
-            # Obliczamy koordynaty prostokąta (Left, Top, Right, Bottom)
             x0 = padding_x
             y0 = slot_center_y - (rect_height / 2)
             x1 = img_width - padding_x
             y1 = slot_center_y + (rect_height / 2)
             
-            # Rysowanie
             draw.rectangle([x0, y0, x1, y1], fill="white")
-            print(f"⬜ Narysowano biały prostokąt w slocie {slot_idx} (Y: {int(y0)}-{int(y1)})")
+            print(f"⬜ Spacer w wierszu {slot_idx}")
 
 
         # =========================================================
-        # KROK B: PRZYGOTOWANIE DANYCH (Sloty 0, 2, 4 -> Field 1, 2, 3)
+        # KROK C: PRZYGOTOWANIE DANYCH (Index 2, 4, 6)
         # =========================================================
-        # Mapowanie Field Number -> Środek w pionie (dla slotów 0, 2, 4)
         field_centers_y = {
-            1: (row_height * 0) + (row_height / 2), # Slot 0
-            2: (row_height * 2) + (row_height / 2), # Slot 2
-            3: (row_height * 4) + (row_height / 2)  # Slot 4
+            1: (row_height * 2) + (row_height / 2),
+            2: (row_height * 4) + (row_height / 2),
+            3: (row_height * 6) + (row_height / 2)
         }
 
         raw_fields = data.get("fields", {})
         items_to_draw = {}
 
-        # Parsowanie JSON-a (szukanie fieldów)
         for key, item in raw_fields.items():
             if not isinstance(item, dict): continue
             
@@ -355,7 +378,7 @@ def process_calendar_bottom(data):
                     items_to_draw[f_num]["type"] = "image"
 
         # =========================================================
-        # KROK C: RYSOWANIE CONTENTU (Fields 1, 2, 3)
+        # KROK D: RYSOWANIE CONTENTU
         # =========================================================
         for f_num in [1, 2, 3]:
             if f_num not in items_to_draw:
@@ -368,7 +391,7 @@ def process_calendar_bottom(data):
             # --- TEKST ---
             if item["type"] == "text":
                 text = item["text"]
-                font_size = max(20, int(img_width * 0.10))
+                font_size = max(20, int(img_width * 0.12))
 
                 try:
                     font = ImageFont.truetype("arial.ttf", font_size)
@@ -381,7 +404,6 @@ def process_calendar_bottom(data):
 
                 draw.text((center_x - text_w/2, center_y - text_h/2), 
                           text, font=font, fill="white")
-                print(f"✏️ Field {f_num} (Tekst): gotowe.")
 
             # --- OBRAZ ---
             elif item["type"] == "image":
@@ -399,14 +421,15 @@ def process_calendar_bottom(data):
                         
                         if new_size[0] > 0 and new_size[1] > 0:
                             overlay = overlay.resize(new_size, Image.Resampling.LANCZOS)
-                            base_img.paste(overlay, 
-                                           (int(center_x - new_size[0]/2), int(center_y - new_size[1]/2)), 
-                                           overlay)
-                            print(f"🖼️ Field {f_num} (Obraz): gotowe.")
+                            
+                            paste_x = int(center_x - new_size[0]/2)
+                            paste_y = int(center_y - new_size[1]/2)
+                            
+                            base_img.paste(overlay, (paste_x, paste_y), overlay)
                     except Exception as e:
                         print(f"⚠️ Błąd obrazka field {f_num}: {e}")
 
-        # 4. ZAPIS (NADPISYWANIE)
+        # 4. ZAPIS
         base_img.save(base_image_path)
         print(f"✅ Nadpisano plik: {base_image_path}")
         return base_image_path
@@ -416,6 +439,8 @@ def process_calendar_bottom(data):
         import traceback
         traceback.print_exc()
         return None
+
+
 
 def handle_top_image(calendar, export_dir):
     """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""

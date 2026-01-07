@@ -500,20 +500,20 @@ class CalendarPrint(generics.CreateAPIView):
             with open(json_path, "r", encoding="utf-8") as f:
                 loaded_data = json.load(f)
             
-            # if (loaded_data["top_image"] ):
-            #     result = upscale_image_with_bigjpg(loaded_data["top_image"],export_dir)
-            #     upscaled_path = result["local_upscaled"]
-            #     print(f"Ścieżka do pliku: {upscaled_path}")
-            # if (loaded_data["bottom"]['type'] == 'image' ):
-            #     upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
+            if (loaded_data["top_image"] ):
+                result = upscale_image_with_bigjpg(loaded_data["top_image"],export_dir)
+                upscaled_path = result["local_upscaled"]
+                print(f"Ścieżka do pliku: {upscaled_path}")
+            if (loaded_data["bottom"]['type'] == 'image' ):
+                upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
 
             # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
-            # if data["top_image"] and data.get("year"):
-            #     process_top_image_with_year(upscaled_path, data,)
+            if data["top_image"] and data.get("year"):
+                process_top_image_with_year(upscaled_path, data,)
                 
 
             # 8. Nanoszenie fileds na bottom 
-                process_calendar_bottom(data)
+                process_calendar_bottom(data,upscaled_path)
 
 
 
