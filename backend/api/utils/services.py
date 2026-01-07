@@ -85,7 +85,7 @@ def handle_field_data(field_obj, field_number, export_dir):
                             for chunk in response.iter_content(1024):
                                 f.write(chunk)
                         return {
-                            "field_number": field_number,
+                            "field_number": field_obj.field_number,
                             "image_url": dest
                         }
                     else:
@@ -129,12 +129,12 @@ def handle_bottom_data(bottom_obj, export_dir):
         width, height = 1200, 8000 # Stałe wymiary
 
         if isinstance(bottom_obj, BottomColor):
-            filename = os.path.join(export_dir, "bottom_color.png")
+            filename = os.path.join(export_dir, "bottom.png")
             img = Image.new("RGB", (width, height), bottom_obj.color)
             return_data = {"type": "color", "color": bottom_obj.color}
 
         elif isinstance(bottom_obj, BottomGradient):
-            filename = os.path.join(export_dir, "bottom_gradient.png")
+            filename = os.path.join(export_dir, "bottom.png")
             start_rgb = hex_to_rgb(bottom_obj.start_color)
             end_rgb = hex_to_rgb(bottom_obj.end_color)
 
@@ -168,126 +168,116 @@ def handle_bottom_data(bottom_obj, export_dir):
                 "css": get_gradient_css(bottom_obj.start_color, bottom_obj.end_color, bottom_obj.direction),
             }
         
-        # Zapis i wgranie do Cloudinary
-        try:
-            img.save(filename)
-            return_data["path"] = filename # Lokalna ścieżka tymczasowa
-
-            upload_result = cloudinary.uploader.upload(
-                filename, 
-                folder="calendar_exports" 
-            )
-            cloudinary_url = upload_result.get("secure_url")
-            print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
-            
-            # Usuwanie lokalnego pliku
-            os.remove(filename)
-            print(f"🗑️ Usunięto lokalny plik: {filename}")
-            
-            return_data["cloudinary_url"] = cloudinary_url
-            return return_data
-
-        except Exception as e:
-            print(f"❌ Błąd podczas generowania/wgrywania bottom (kolor/gradient): {e}")
-            return return_data # Zwróć dane z lokalną ścieżką lub bez URL Cloudinary
-
+        # Zapisz obraz lokalnie
+        img.save(filename)
+        
+        # POPRAWKA: Najpierw aktualizujemy, potem zwracamy słownik
+        return_data["image_path"] = filename  # Lub: return_data.update({"image_path": filename})
+        return return_data  # Zwracamy obiekt, a nie wynik metody update()
+        
     return None
-
-def process_top_image_with_year(calendar, data, export_dir):
+def process_top_image_with_year(top_image_path, data):
     """
     Pobiera obraz 'top_image', rysuje na nim tekst roku, 
-    zapisuje i wgrywa do Cloudinary.
+    zapisuje i (teoretycznie) wgrywa do Cloudinary.
     """
-    top_image_path = data.get("top_image")
     year_data = data.get("year")
     
     if not top_image_path or not year_data:
-        return None, data.get("top_image") # Zwróć to co było
+        print("⚠️ Brak ścieżki obrazu lub danych roku.")
+        return None, data.get("top_image")
 
     output_path = top_image_path.replace(".jpg", "_with_text.jpg")
-    cloudinary_url = None
     
     try:
-        # 1. Rysowanie tekstu
+        # 1. Otwarcie obrazu i pobranie wymiarów
         image = Image.open(top_image_path)
+        img_width, img_height = image.size
+        print(f"ℹ️ Wymiary obrazu: {img_width}x{img_height}")
+
         draw = ImageDraw.Draw(image)
+
+        # --- SEKJA SKALOWANIA (POPRAWKA GŁÓWNA) ---
+        # Zakładamy, że "bazowe" wartości w year_data były projektowane dla
+        # standardowej szerokości Full HD (1920px).
+        # Obliczamy mnożnik na podstawie rzeczywistej szerokości obrazu (np. 7K).
+        BASE_REFERENCE_WIDTH = 1920.0
         
+        # Obliczamy scale_factor. Dla obrazu 7680px wyniesie on ok. 4.0.
+        # Używamy max(1.0, ...), żeby nie zmniejszać czcionki na małych obrazkach.
+        scale_factor = max(1.0, img_width / BASE_REFERENCE_WIDTH)
+
+        # Pobieramy bazowy rozmiar i pozycję, zapewniając wartości domyślne
+        base_font_size = int(year_data.get("size", 100))
+        base_pos_x = int(year_data.get("positionX", img_width / 2)) # Domyślnie środek
+        base_pos_y = int(year_data.get("positionY", img_height / 2)) # Domyślnie środek
+
+        # Aplikujemy skalowanie
+        final_font_size = int(base_font_size * scale_factor)
+        final_pos_x = int(base_pos_x * scale_factor)
+        final_pos_y = int(base_pos_y * scale_factor)
+
+        print(f"ℹ️ Skalowanie: {scale_factor:.2f}x.")
+        print(f"ℹ️ Rozmiar czcionki: {base_font_size} -> {final_font_size}px")
+        print(f"ℹ️ Pozycja: ({base_pos_x},{base_pos_y}) -> ({final_pos_x},{final_pos_y})")
+        # -------------------------------------------
+
+
         # Ładowanie czcionki
         try:
-            # Użyj nazwy czcionki z danych, a nie hardkodowanego "times.ttf"
-            font_path = year_data.get("font") or "times.ttf" # Użyj `year_data`
-            font = ImageFont.truetype(font_path, int(year_data["size"]))
+            font_path = year_data.get("font")
+            # Jeśli ścieżka nie jest podana lub plik nie istnieje, użyj times.ttf
+            if not font_path or not os.path.exists(font_path):
+                 font_path = "times.ttf"
+
+            # Używamy PRZESKALOWANEGO rozmiaru (final_font_size)
+            font = ImageFont.truetype(font_path, final_font_size)
         except IOError:
+            # Fallback dla bardzo starych systemów bez times.ttf, 
+            # ale uwaga: load_default() jest ZAWSZE malutka i bitmapowa.
             font = ImageFont.load_default()
-            print("⚠️ Nie znaleziono niestandardowej czcionki, użyto domyślnej.")
+            print("⚠️ BŁĄD KRYTYCZNY: Nie znaleziono czcionki TTF. Użyto domyślnej (będzie niewidoczna na 7K!). Upewnij się, że masz plik .ttf")
         
-        # Dodaj tekst
-        draw.text(
-            (int(year_data["positionX"]), int(year_data["positionY"])),
-            year_data["text"],
-            font=font,
-            fill=year_data["color"]
-        )
+        text_content = year_data.get("text", "YEAR")
+        text_color = year_data.get("color", "#FFFFFF") # Domyślnie biały
+
+       
+
+
+        # Dodaj tekst używając PRZESKALOWANYCH pozycji
+        print(f"Rysowanie tekstu '{text_content}' na pozycji ({final_pos_x}, {final_pos_y})")  
+        try:
+            draw.text(
+                (final_pos_x, final_pos_y),
+                text_content,
+                font=font,
+                fill=text_color
+            )
+        except Exception as e:  
+            print(f"⚠️ Błąd podczas rysowania: {e}")
 
         # Zapisz wynik
         image.save(output_path)
-        print(f"✅ Zapisano nowy obraz: {output_path}")
+        print(f"✅ Zapisano nowy obraz z tekstem: {output_path}")
 
-        # 2. Wgrywanie do Cloudinary
-        upload_result = cloudinary.uploader.upload(
-            output_path, 
-            folder="calendar_exports"
-        )
-        cloudinary_url = upload_result.get("secure_url")
-        print(f"☁️ Obraz wgrany do Cloudinary: {cloudinary_url}")
-
-        # 3. Czyszczenie lokalnych plików
-        if os.path.exists(output_path):
-            os.remove(output_path)
-            print(f"🗑️ Usunięto lokalny plik: {output_path}")
         
-        # Usuń oryginalny pobrany plik top_image, jeśli był pobrany lokalnie
-        original_path_remove = top_image_path
-        if os.path.exists(original_path_remove):
-             os.remove(original_path_remove)
-             print(f"🗑️ Usunięto oryginalny lokalny plik: {original_path_remove}")
-
-        return cloudinary_url, output_path # Zwróć Cloudinary URL i lokalną ścieżkę do posprzątania (choć została usunięta)
+        return output_path, output_path 
 
     except Exception as e:
         print(f"⚠️ Błąd w process_top_image_with_year: {e}")
-        return None, top_image_path # W razie błędu zwróć None dla URL Cloudinary i oryginalną ścieżkę
+        return None, top_image_path
 
 def handle_top_image(calendar, export_dir):
     """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
-    top_image_path = None
-    top_image_url = None
-    
+
     if calendar.top_image_id:
         try:
             gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
-            top_image_url = gen_img.url
-            if gen_img.url:
-                # Pobierz plik lokalnie TYLKO jeśli rok ma być na niego naniesiony
-                if getattr(calendar, "year_data_id", None): 
-                    filename = f"top_image_{os.path.basename(gen_img.url)}"
-                    dest = os.path.join(export_dir, filename)
-                    
-                    response = requests.get(gen_img.url, stream=True)
-                    if response.status_code == 200:
-                        with open(dest, "wb") as f:
-                            for chunk in response.iter_content(1024):
-                                f.write(chunk)
-                        top_image_path = dest
-                    else:
-                        print(f"Error downloading top_image: HTTP {response.status_code}")
-                        top_image_path = None # Nie udało się pobrać, nie można rysować
-                
-                else:
-                    # Jeśli nie ma roku, wystarczy URL
-                    top_image_path = gen_img.url 
+            
+           
+          
 
         except GeneratedImage.DoesNotExist:
             print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
             
-    return top_image_path
+    return gen_img.url

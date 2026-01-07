@@ -2,7 +2,7 @@ import os
 from PIL import Image
 from bigjpg import Bigjpg, Styles, Noises, EnlargeValues
 
-def upscale_image_with_bigjpg(image_url):
+def upscale_image_with_bigjpg(image_url,export_dir):
     bigjpg = Bigjpg("7636406dfd0e4876ab57c95199cc1d75")
 
     # Wywołaj API bigjpg
@@ -13,12 +13,10 @@ def upscale_image_with_bigjpg(image_url):
         image_url=image_url
     )
 
-    # Katalog na upscaled
-    output_dir = "upscaled"
-    os.makedirs(output_dir, exist_ok=True)
+    
 
     # Znajdź numerację
-    existing_files = os.listdir(output_dir)
+    existing_files = os.listdir(export_dir)
     existing_numbers = []
     for filename in existing_files:
         if filename.startswith("enlarged_image_") and filename.endswith(".png"):
@@ -28,23 +26,23 @@ def upscale_image_with_bigjpg(image_url):
     next_number = max(existing_numbers, default=0) + 1
 
     # Ścieżka zapisu x4
-    upscaled_path = os.path.join(output_dir, f"enlarged_image_{next_number}.png")
+    upscaled_path = os.path.join(export_dir, f"enlarged_image_{next_number}.png")
     image_info.download(upscaled_path)
     print(f"✅ Image saved to: {upscaled_path}")
 
     # Katalog na wersję 300dpi
-    dpi_dir = "300dpi"
-    os.makedirs(dpi_dir, exist_ok=True)
+    # dpi_dir = "300dpi"
+    # os.makedirs(dpi_dir, exist_ok=True)
 
-    dpi_path = os.path.join(dpi_dir, f"enlarged_image_{next_number}.png")
+    # dpi_path = os.path.join(dpi_dir, f"enlarged_image_{next_number}.png")
 
     # Zapis z DPI=300
-    img = Image.open(upscaled_path)
-    img.save(dpi_path, dpi=(300, 300))
-    print(f"✅ Saved 300 DPI to: {dpi_path}")
+    # img = Image.open(upscaled_path)
+    # img.save(dpi_path, dpi=(300, 300))
+    # print(f"✅ Saved 300 DPI to: {dpi_path}")
 
     return {
         "bigjpg_url": image_info.get_url(),
         "local_upscaled": upscaled_path,
-        "local_300dpi": dpi_path
+        # "local_300dpi": dpi_path
     }
