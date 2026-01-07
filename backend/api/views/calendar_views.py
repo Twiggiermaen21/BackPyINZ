@@ -21,7 +21,9 @@ from ..utils.services import (
     handle_field_data, 
     handle_bottom_data,
     handle_top_image,
-    process_top_image_with_year
+    process_top_image_with_year,
+      process_calendar_bottom
+    
 )
 from ..utils.upscaling import upscale_image_with_bigjpg
 
@@ -480,13 +482,10 @@ class CalendarPrint(generics.CreateAPIView):
             # 6. Obsługa pól (Field1-3 + prefetched)
             all_fields = []
             for i in range(1, 4):
-                print(getattr(calendar, f"field{i}", None))
                 all_fields.append((getattr(calendar, f"field{i}", None), i)) 
 
             for img in getattr(calendar, "prefetched_images_for_fields", []):
-                print("Dodawanie prefetched image:", img)
                 all_fields.append((img, f"prefetched_image_{img.id}"))
-
 
             for field_obj, field_name in all_fields:
                 
@@ -497,8 +496,6 @@ class CalendarPrint(generics.CreateAPIView):
             json_path = os.path.join(export_dir, "data.json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            print(f"📄 Zapisano plik JSON: {json_path}")
-
 
             with open(json_path, "r", encoding="utf-8") as f:
                 loaded_data = json.load(f)
@@ -511,13 +508,12 @@ class CalendarPrint(generics.CreateAPIView):
             #     upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
 
             # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
-            
             # if data["top_image"] and data.get("year"):
             #     process_top_image_with_year(upscaled_path, data,)
                 
 
             # 8. Nanoszenie fileds na bottom 
-                
+                process_calendar_bottom(data)
 
 
 

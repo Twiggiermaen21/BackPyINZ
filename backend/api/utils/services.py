@@ -267,16 +267,161 @@ def process_top_image_with_year(top_image_path, data):
         print(f"⚠️ Błąd w process_top_image_with_year: {e}")
         return None, top_image_path
 
+
+
+def process_calendar_bottom(data):
+    """
+    Wersja PIONOWA + BIAŁE PROSTOKĄTY:
+    1. Dzieli obraz na 6 wierszy.
+    2. W wierszach parzystych (indeksy 0, 2, 4) umieszcza Field 1, 2, 3.
+    3. W wierszach nieparzystych (indeksy 1, 3, 5) rysuje białe prostokąty 1000px.
+    """
+    
+    bottom_data = data.get("bottom", {})
+    base_image_path = bottom_data.get("image_path")
+
+    if not base_image_path or not os.path.exists(base_image_path):
+        print(f"❌ Błąd: Nie znaleziono pliku tła: {base_image_path}")
+        return None
+
+    try:
+        # 1. Otwarcie obrazu (do pamięci, żeby móc go potem nadpisać)
+        with Image.open(base_image_path) as src_img:
+            base_img = src_img.convert("RGBA")
+
+        img_width, img_height = base_img.size
+        draw = ImageDraw.Draw(base_img)
+        print(f"ℹ️ Przetwarzanie {base_image_path} ({img_width}x{img_height})")
+
+        # --- KONFIGURACJA GRIDU ---
+        row_height = img_height / 6
+        center_x_fixed = img_width / 2 
+        
+        # Konfiguracja białych prostokątów
+        rect_height = 600
+        padding_x = 80
+
+        # =========================================================
+        # KROK A: RYSOWANIE BIAŁYCH PROSTOKĄTÓW (Sloty 1, 3, 5)
+        # =========================================================
+        # Indeksy liczone od zera: 1 (drugi rząd), 3 (czwarty rząd), 5 (szósty rząd)
+        for slot_idx in [1, 3, 5]:
+            # Obliczamy środek danego slotu w pionie
+            # Wzór: wysokość_rzędu * numer_rzędu + połowa_rzędu
+            slot_center_y = (row_height * slot_idx) + (row_height / 2)
+            
+            # Obliczamy koordynaty prostokąta (Left, Top, Right, Bottom)
+            x0 = padding_x
+            y0 = slot_center_y - (rect_height / 2)
+            x1 = img_width - padding_x
+            y1 = slot_center_y + (rect_height / 2)
+            
+            # Rysowanie
+            draw.rectangle([x0, y0, x1, y1], fill="white")
+            print(f"⬜ Narysowano biały prostokąt w slocie {slot_idx} (Y: {int(y0)}-{int(y1)})")
+
+
+        # =========================================================
+        # KROK B: PRZYGOTOWANIE DANYCH (Sloty 0, 2, 4 -> Field 1, 2, 3)
+        # =========================================================
+        # Mapowanie Field Number -> Środek w pionie (dla slotów 0, 2, 4)
+        field_centers_y = {
+            1: (row_height * 0) + (row_height / 2), # Slot 0
+            2: (row_height * 2) + (row_height / 2), # Slot 2
+            3: (row_height * 4) + (row_height / 2)  # Slot 4
+        }
+
+        raw_fields = data.get("fields", {})
+        items_to_draw = {}
+
+        # Parsowanie JSON-a (szukanie fieldów)
+        for key, item in raw_fields.items():
+            if not isinstance(item, dict): continue
+            
+            f_num = None
+            str_key = str(key)
+
+            if str_key.isdigit() and int(str_key) in [1, 2, 3]:
+                f_num = int(str_key)
+            if "field_number" in item:
+                f_num = int(item["field_number"])
+
+            if f_num:
+                if "text" in item:
+                    items_to_draw[f_num] = item
+                    items_to_draw[f_num]["type"] = "text"
+                elif "image_url" in item:
+                    items_to_draw[f_num] = item
+                    items_to_draw[f_num]["type"] = "image"
+
+        # =========================================================
+        # KROK C: RYSOWANIE CONTENTU (Fields 1, 2, 3)
+        # =========================================================
+        for f_num in [1, 2, 3]:
+            if f_num not in items_to_draw:
+                continue
+
+            item = items_to_draw[f_num]
+            center_x = center_x_fixed
+            center_y = field_centers_y[f_num]
+
+            # --- TEKST ---
+            if item["type"] == "text":
+                text = item["text"]
+                font_size = max(20, int(img_width * 0.10))
+
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+
+                draw.text((center_x - text_w/2, center_y - text_h/2), 
+                          text, font=font, fill="white")
+                print(f"✏️ Field {f_num} (Tekst): gotowe.")
+
+            # --- OBRAZ ---
+            elif item["type"] == "image":
+                img_url = item["image_url"]
+                if os.path.exists(img_url):
+                    try:
+                        with Image.open(img_url) as overlay_src:
+                            overlay = overlay_src.convert("RGBA")
+                        
+                        max_w = img_width * 0.8
+                        max_h = row_height * 0.8
+                        
+                        ratio = min(max_w / overlay.width, max_h / overlay.height)
+                        new_size = (int(overlay.width * ratio), int(overlay.height * ratio))
+                        
+                        if new_size[0] > 0 and new_size[1] > 0:
+                            overlay = overlay.resize(new_size, Image.Resampling.LANCZOS)
+                            base_img.paste(overlay, 
+                                           (int(center_x - new_size[0]/2), int(center_y - new_size[1]/2)), 
+                                           overlay)
+                            print(f"🖼️ Field {f_num} (Obraz): gotowe.")
+                    except Exception as e:
+                        print(f"⚠️ Błąd obrazka field {f_num}: {e}")
+
+        # 4. ZAPIS (NADPISYWANIE)
+        base_img.save(base_image_path)
+        print(f"✅ Nadpisano plik: {base_image_path}")
+        return base_image_path
+
+    except Exception as e:
+        print(f"❌ Błąd: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def handle_top_image(calendar, export_dir):
     """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
-
     if calendar.top_image_id:
         try:
             gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
-            
-           
-          
-
         except GeneratedImage.DoesNotExist:
             print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
             
