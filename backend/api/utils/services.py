@@ -105,6 +105,20 @@ def handle_field_data(field_obj, field_number, export_dir):
 
     return None
 
+
+
+
+
+def handle_top_image(calendar, export_dir):
+    """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
+    if calendar.top_image_id:
+        try:
+            gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
+        except GeneratedImage.DoesNotExist:
+            print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
+            
+    return gen_img.url
+
 def handle_bottom_data(bottom_obj, export_dir):
     """
     Obsługuje dane dla sekcji 'bottom' (obraz, kolor, gradient). 
@@ -126,7 +140,7 @@ def handle_bottom_data(bottom_obj, export_dir):
     # ================= KOLOR/GRADIENT (GENEROWANIE OBRAZÓW) =================
     elif isinstance(bottom_obj, (BottomColor, BottomGradient)):
         
-        width, height = 1200, 8000 # Stałe wymiary
+        width, height = 3732, 10181 # Stałe wymiary
 
         if isinstance(bottom_obj, BottomColor):
             filename = os.path.join(export_dir, "bottom.png")
@@ -267,16 +281,15 @@ def process_top_image_with_year(top_image_path, data):
         print(f"⚠️ Błąd w process_top_image_with_year: {e}")
         return None, top_image_path
 
-
+import traceback
 
 def process_calendar_bottom(data, upscaled_top_path=None):
     """
-    UKŁAD 7-CZĘŚCIOWY (PIONOWY) + TOP IMAGE:
-    1. Dzieli obraz na 7 wierszy.
-    2. Index 0: Wkleja obraz 'upscaled_top_path' (dopasowany do wymiaru).
-    3. Index 1, 3, 5: Białe prostokąty (spacery).
-    4. Index 2, 4, 6: Field 1, Field 2, Field 3 (treść).
-    Nadpisuje plik źródłowy.
+    UKŁAD PRO (300 DPI) - BEZ MALOWANIA TŁA
+    Wymiary pionowe (Y) są obliczane na sztywno:
+    - Główka: 2480 px
+    - Pasek reklamowy: 591 px
+    - Kalendarium: 1654 px
     """
     
     bottom_data = data.get("bottom", {})
@@ -287,7 +300,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         return None
 
     try:
-        # 1. Otwarcie obrazu tła (do pamięci)
+        # 1. Otwarcie obrazu tła
         with Image.open(base_image_path) as src_img:
             base_img = src_img.convert("RGBA")
 
@@ -295,81 +308,66 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         draw = ImageDraw.Draw(base_img)
         print(f"ℹ️ Przetwarzanie: {base_image_path} ({img_width}x{img_height})")
 
-        # --- KONFIGURACJA GRIDU (7 CZĘŚCI) ---
-        row_height = img_height / 7
-        center_x_fixed = img_width / 2 
+        # --- KONFIGURACJA WYMIARÓW (PRO 300 DPI) ---
+        # Zamiast row_height = img_height / 7, definiujemy konkretne wysokości
+        H_HEADER = 2480    # 21 cm
+        H_AD = 591         # 5 cm
+        H_CAL = 1654       # 14 cm
         
-        # Spacer configuration
-        rect_height = 1000
-        padding_x = 10
+        # Obliczamy pozycje Y (początki sekcji)
+        # Gdzie zaczynają się paski reklamowe:
+        y_ad1 = H_HEADER
+        y_ad2 = H_HEADER + H_AD + H_CAL
+        y_ad3 = H_HEADER + (2 * H_AD) + (2 * H_CAL)
+        y_footer = H_HEADER + (3 * H_AD) + (3 * H_CAL)
 
         # =========================================================
-        # KROK A: GŁÓWKA (Index 0) -> UPSCALED IMAGE
+        # KROK A: GŁÓWKA (Index 0)
         # =========================================================
-        # Cel: Wypełnić całą pierwszą sekcję (0 do row_height)
-        target_header_size = (img_width, int(row_height))
-        
         if upscaled_top_path and os.path.exists(upscaled_top_path):
             try:
                 with Image.open(upscaled_top_path) as header_src:
                     header_img = header_src.convert("RGBA")
-                    
-                    # Używamy ImageOps.fit -> to działa jak CSS "object-fit: cover"
-                    # Wycina środek obrazka pasujący do wymiarów, nie deformując go.
-                    header_fitted = ImageOps.fit(header_img, target_header_size, method=Image.Resampling.LANCZOS)
-                    
-                    # Wklejamy na samej górze (0, 0)
+                    # Dopasowanie główki do wymiaru 2480 px wysokości
+                    header_fitted = ImageOps.fit(
+                        header_img, 
+                        (img_width, H_HEADER), 
+                        method=Image.Resampling.LANCZOS
+                    )
                     base_img.paste(header_fitted, (0, 0))
-                    print(f"🖼️ Wklejono Top Image w sekcji 0: {upscaled_top_path}")
+                    print(f"🖼️ Wklejono Top Image: {upscaled_top_path}")
             except Exception as e:
-                print(f"⚠️ Błąd przy wklejaniu top image: {e}")
-                # Fallback: Białe tło jeśli błąd
-                draw.rectangle([0, 0, img_width, int(row_height)], fill="white")
-        else:
-            # Fallback: Białe tło jeśli brak pliku
-            draw.rectangle([0, 0, img_width, int(row_height)], fill="white")
-            print("⬜ Brak top image, sekcja 0 zamalowana na biało.")
-
+                print(f"⚠️ Błąd przy wklejaniu główki: {e}")
+        
+        # UWAGA: Usunięto KROK B (rysowanie białych prostokątów), tło zostaje oryginalne.
 
         # =========================================================
-        # KROK B: BIAŁE PROSTOKĄTY (Index 1, 3, 5)
+        # KROK C: OBLICZENIE ŚRODKÓW PÓL (Index 2, 4, 6 + Stopka)
         # =========================================================
-        for slot_idx in [1, 3, 5]:
-            slot_center_y = (row_height * slot_idx) + (row_height / 2)
-            
-            x0 = padding_x
-            y0 = slot_center_y - (rect_height / 2)
-            x1 = img_width - padding_x
-            y1 = slot_center_y + (rect_height / 2)
-            
-            draw.rectangle([x0, y0, x1, y1], fill="white")
-            print(f"⬜ Spacer w wierszu {slot_idx}")
-
-
-        # =========================================================
-        # KROK C: PRZYGOTOWANIE DANYCH (Index 2, 4, 6)
-        # =========================================================
+        # Obliczamy środek każdego paska reklamowego, żeby tam wstawić tekst/logo
         field_centers_y = {
-            1: (row_height * 2) + (row_height / 2),
-            2: (row_height * 4) + (row_height / 2),
-            3: (row_height * 6) + (row_height / 2)
+            1: int(y_ad1 + (H_AD / 2)),    # Środek paska 1
+            2: int(y_ad2 + (H_AD / 2)),    # Środek paska 2
+            3: int(y_ad3 + (H_AD / 2)),    # Środek paska 3
+            4: int(y_footer + 300)         # Środek stopki (orientacyjnie, +300px od góry stopki)
         }
 
         raw_fields = data.get("fields", {})
         items_to_draw = {}
 
+        # Przetwarzanie danych wejściowych
         for key, item in raw_fields.items():
             if not isinstance(item, dict): continue
             
             f_num = None
             str_key = str(key)
-
-            if str_key.isdigit() and int(str_key) in [1, 2, 3]:
+            # Obsługa kluczy "1", "2", "3", "4"
+            if str_key.isdigit():
                 f_num = int(str_key)
             if "field_number" in item:
                 f_num = int(item["field_number"])
 
-            if f_num:
+            if f_num and f_num in field_centers_y:
                 if "text" in item:
                     items_to_draw[f_num] = item
                     items_to_draw[f_num]["type"] = "text"
@@ -378,32 +376,37 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                     items_to_draw[f_num]["type"] = "image"
 
         # =========================================================
-        # KROK D: RYSOWANIE CONTENTU
+        # KROK D: RYSOWANIE TREŚCI (BEZ TŁA)
         # =========================================================
-        for f_num in [1, 2, 3]:
+        center_x_fixed = img_width / 2
+
+        for f_num, center_y in field_centers_y.items():
             if f_num not in items_to_draw:
                 continue
 
             item = items_to_draw[f_num]
-            center_x = center_x_fixed
-            center_y = field_centers_y[f_num]
-
+            
             # --- TEKST ---
             if item["type"] == "text":
                 text = item["text"]
-                font_size = max(20, int(img_width * 0.12))
+                # Font size dostosowany do wysokości paska (ok. 50% wysokości paska)
+                font_size = int(H_AD * 0.5)
 
                 try:
                     font = ImageFont.truetype("arial.ttf", font_size)
                 except:
                     font = ImageFont.load_default()
 
-                bbox = draw.textbbox((0, 0), text, font=font)
-                text_w = bbox[2] - bbox[0]
-                text_h = bbox[3] - bbox[1]
+                # Nowa metoda obliczania rozmiaru tekstu (bezpieczniejsza)
+                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                text_w = right - left
+                text_h = bottom - top
 
-                draw.text((center_x - text_w/2, center_y - text_h/2), 
-                          text, font=font, fill="white")
+                # Rysowanie tekstu (centrowanie)
+                draw.text(
+                    (center_x_fixed - text_w/2, center_y - text_h/2 - top), 
+                    text, font=font, fill="black"
+                )
 
             # --- OBRAZ ---
             elif item["type"] == "image":
@@ -412,42 +415,29 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                     try:
                         with Image.open(img_url) as overlay_src:
                             overlay = overlay_src.convert("RGBA")
-                        
-                        max_w = img_width * 0.8
-                        max_h = row_height * 0.8
-                        
-                        ratio = min(max_w / overlay.width, max_h / overlay.height)
-                        new_size = (int(overlay.width * ratio), int(overlay.height * ratio))
-                        
-                        if new_size[0] > 0 and new_size[1] > 0:
-                            overlay = overlay.resize(new_size, Image.Resampling.LANCZOS)
                             
-                            paste_x = int(center_x - new_size[0]/2)
-                            paste_y = int(center_y - new_size[1]/2)
+                            # Skalowanie obrazka, żeby nie wyszedł poza pasek (z marginesem)
+                            max_w = int(img_width * 0.9)
+                            max_h = int(H_AD * 0.9) # 90% wysokości paska
                             
-                            base_img.paste(overlay, (paste_x, paste_y), overlay)
+                            # Zachowanie proporcji (thumbnail robi to automatycznie)
+                            overlay.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+                            
+                            paste_x = int(center_x_fixed - overlay.width/2)
+                            paste_y = int(center_y - overlay.height/2)
+                            
+                            # Używamy alpha_composite dla lepszej jakości przezroczystości
+                            base_img.alpha_composite(overlay, dest=(paste_x, paste_y))
                     except Exception as e:
                         print(f"⚠️ Błąd obrazka field {f_num}: {e}")
 
         # 4. ZAPIS
-        base_img.save(base_image_path)
+        base_img = base_img.convert("RGB") # Konwersja do RGB (bezpieczniejsza dla druku)
+        base_img.save(base_image_path, dpi=(300, 300))
         print(f"✅ Nadpisano plik: {base_image_path}")
         return base_image_path
 
     except Exception as e:
         print(f"❌ Błąd: {e}")
-        import traceback
         traceback.print_exc()
         return None
-
-
-
-def handle_top_image(calendar, export_dir):
-    """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
-    if calendar.top_image_id:
-        try:
-            gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
-        except GeneratedImage.DoesNotExist:
-            print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
-            
-    return gen_img.url
