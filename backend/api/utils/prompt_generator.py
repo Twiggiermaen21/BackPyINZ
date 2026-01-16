@@ -94,9 +94,20 @@ def get_detailed_prompt_from_model(
     )
 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant. Respond clearly and concisely."},
-        {"role": "user", "content": full_prompt}
-    ]
+    {
+        "role": "system", 
+        "content": (
+            "You are an expert Prompt Engineer. Your task is to take the user's "
+            "simple prompt and expand it into a high-quality, structured, and "
+            "effective instruction for an AI. For every request, follow the "
+            "CO-STAR framework (Context, Objective, Style, Tone, Audience, Response). "
+            "Ensure the expanded prompt includes a clear Persona, Task Constraints, "
+            "and a specific Output Format. If the user's intent is vague, ask "
+            "clarifying questions before providing the final prompt."
+        )
+    },
+    {"role": "user", "content": full_prompt}
+]
 
     response = client.chat.completions.create(
         model=model,
@@ -104,5 +115,6 @@ def get_detailed_prompt_from_model(
         temperature=temperature,
         stream=stream
     )
+    print("Response from model:", response)
 
     return response.choices[0].message.content

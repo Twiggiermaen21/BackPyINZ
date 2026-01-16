@@ -440,4 +440,4 @@ def process_calendar_bottom(data, upscaled_top_path=None):
     except Exception as e:
         print(f"❌ Błąd: {e}")
         traceback.print_exc()
-        return None
+        return None 
