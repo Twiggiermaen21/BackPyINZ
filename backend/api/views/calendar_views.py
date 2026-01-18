@@ -273,7 +273,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
         data = self.request.data
         user = self.request.user
         name = data.get("name", "new calendar")
-        
+        print("dada",data)
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 
         top_image_value = serializer.validated_data.get("top_image")
@@ -385,6 +385,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         text=item["text"],
                         font=item.get("font", {}).get("fontFamily"),
                         weight=item.get("font", {}).get("fontWeight"),
+                        color=item.get("font", {}).get("fontColor"),
+                        size=item.get("font", {}).get("fontSize"),
                     )
                 elif "image" in item:
                     field_obj = CalendarMonthFieldImage.objects.create(

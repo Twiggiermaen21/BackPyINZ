@@ -201,7 +201,7 @@ class GenerateImageSerializer(serializers.ModelSerializer):
 class CalendarMonthFieldTextSerializer(serializers.ModelSerializer):
     class Meta:
         model = CalendarMonthFieldText
-        fields = ["id", "created_at", "author", "text", "font", "weight"]
+        fields = ["id", "created_at", "author", "text", "font", "weight", "color", "size"]
         read_only_fields = ["id", "created_at", "author"]
 
 class CalendarMonthFieldImageSerializer(serializers.ModelSerializer):

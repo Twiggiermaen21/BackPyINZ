@@ -109,10 +109,14 @@ class CalendarMonthFieldText(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     text = models.CharField(max_length=255)
-    font = models.CharField(max_length=100, blank=True, null=True)
-    weight = models.CharField(max_length=50, blank=True, null=True)  
-
-
+    
+    # Istniejące pola
+    font = models.CharField(max_length=100, blank=True, null=True)   # fontFamily
+    weight = models.CharField(max_length=50, blank=True, null=True)  # fontWeight
+    
+    # Nowe pola
+    color = models.CharField(max_length=50, default="#000000", help_text="Np. #000000 lub rgba(...)") # fontColor
+    size = models.CharField(max_length=20, blank=True, null=True)    # fontSize
 class CalendarMonthFieldImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
