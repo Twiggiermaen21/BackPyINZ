@@ -6,6 +6,9 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, password_validation
 from django.utils.http import urlsafe_base64_decode
 from django.utils import timezone
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .models import CalendarProduction
+User = get_user_model()
 class ProfileImageSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
 
@@ -48,7 +51,7 @@ class UserSerializer(serializers.ModelSerializer):
         user.save()
         print("✅ Utworzono użytkownika:", user.username)
         return user
-User = get_user_model()
+
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
@@ -123,7 +126,6 @@ class SendEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
@@ -304,7 +306,7 @@ class CalendarSerializer(serializers.ModelSerializer):
             "id", "created_at", "author",
             "top_image", "top_image_url",
             "year_data", "field1", "field2", "field3",
-            "bottom","images_for_fields","name"
+            "bottom", "images_for_fields", "name"
         ]
         read_only_fields = ["id", "created_at", "top_image_url"]
 
@@ -332,8 +334,11 @@ class CalendarSerializer(serializers.ModelSerializer):
     # --- Pomocnik do serializacji field ---
     def serialize_field(self, instance):
         if not instance:
-            return []
+            return None # Zmieniono z [] na None, bo pola field1-3 to pojedyncze obiekty
 
+        # Ponieważ field1/2/3 to GenericForeignKey, to jest to POJEDYNCZY obiekt, nie lista.
+        # Ale Twoja funkcja obsługuje oba przypadki, więc jest OK.
+        
         def serialize_single(item):
             if isinstance(item, CalendarMonthFieldText):
                 data = CalendarMonthFieldTextSerializer(item).data
@@ -341,6 +346,8 @@ class CalendarSerializer(serializers.ModelSerializer):
                 data = CalendarMonthFieldImageSerializer(item).data
             else:
                 return None
+            
+            # Dodajemy content_type_id
             data.update({
                 "content_type_id": ContentType.objects.get_for_model(item).id,
             })
@@ -348,20 +355,24 @@ class CalendarSerializer(serializers.ModelSerializer):
 
         if isinstance(instance, (list, tuple)):
             return [serialize_single(item) for item in instance]
+        
         return serialize_single(instance)
 
-    # --- Pola field1 / field2 / field3 ---
+    # --- POPRAWIONE METODY DLA PÓL ---
+    # Używamy bezpośrednio obj.field1, bo prefetch w widoku wypełnił to pole.
+    
     def get_field1(self, obj):
-        return self.serialize_field(getattr(obj, "prefetched_field1", None))
+        return self.serialize_field(obj.field1)
 
     def get_field2(self, obj):
-        return self.serialize_field(getattr(obj, "prefetched_field2", None))
+        return self.serialize_field(obj.field2)
 
     def get_field3(self, obj):
-        return self.serialize_field(getattr(obj, "prefetched_field3", None))
+        return self.serialize_field(obj.field3)
 
     # --- Bottom ---
     def get_bottom(self, obj):
+        # Tutaj obj.bottom jest OK
         instance = getattr(obj, "bottom", None)
         if not instance:
             return None
@@ -380,14 +391,23 @@ class CalendarSerializer(serializers.ModelSerializer):
         })
         return data
     
+    # --- Images for fields ---
     def get_images_for_fields(self, obj):
-        return [ImageForFieldSerializer(f).data for f in getattr(obj, "prefetched_images_for_fields", [])]
+        # Próbujemy pobrać z prefetch (to_attr), a jak nie ma, to ze standardowego setu
+        # Zakładam, że related_name w modelu ImageForField to 'imageforfield_set' (domyślne)
+        # lub zdefiniowałeś inne.
+        
+        # Jeśli w widoku masz to_attr="prefetched_images_for_fields", to zadziała pierwsze.
+        # Jeśli nie, zadziała drugie (dodatkowe zapytanie do bazy, chyba że prefetch był bez to_attr).
+        
+        items = getattr(obj, "prefetched_images_for_fields", getattr(obj, "imageforfield_set", []))
+        
+        # Jeśli items to Manager (np. imageforfield_set), musimy wywołać .all()
+        if hasattr(items, 'all'):
+             items = items.all()
+             
+        return [ImageForFieldSerializer(f).data for f in items]
 
-from rest_framework import serializers
-from .models import CalendarProduction
-
-from django.utils import timezone
-from rest_framework import serializers
 
 class CalendarProductionSerializer(serializers.ModelSerializer):
     calendar_name = serializers.CharField(source='calendar.name', read_only=True)

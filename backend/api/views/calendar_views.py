@@ -163,10 +163,10 @@ class CalendarByIdView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
     lookup_url_kwarg = "pk"   # domyślnie może być też 'pk'
 
-    def get_queryset(self):
+    def get_queryset(self, request, *args, **kwargs):
         user = self.request.user
 
-        qs = Calendar.objects.filter(author=user).select_related(
+        qs = Calendar.objects.filter(author=user, id=kwargs["pk"]).select_related(
             "top_image",
             "year_data",
             "field1_content_type",
@@ -386,7 +386,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         font=item.get("font", {}).get("fontFamily"),
                         weight=item.get("font", {}).get("fontWeight"),
                         color=item.get("font", {}).get("fontColor"),
-                        size=item.get("font", {}).get("fontSize"),
+                       
                     )
                 elif "image" in item:
                     field_obj = CalendarMonthFieldImage.objects.create(
