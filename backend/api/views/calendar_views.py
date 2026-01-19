@@ -386,6 +386,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
                         font=item.get("font", {}).get("fontFamily"),
                         weight=item.get("font", {}).get("fontWeight"),
                         color=item.get("font", {}).get("fontColor"),
+                        size =item.get("font", {}).get("fontSize"),
                        
                     )
                 elif "image" in item:
