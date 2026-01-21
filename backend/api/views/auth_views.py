@@ -1,19 +1,16 @@
 
-import uuid
+
 from django.contrib.auth.models import User
-from django.contrib.contenttypes.models import ContentType
-from django.db.models import Prefetch
+
 from rest_framework.permissions import IsAuthenticated,  AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from ..models import *
 from ..serializers import *
 from ..pagination import *
-from ..utils.generation import generate_image_from_prompt
-from ..utils.upscaling import upscale_image_with_bigjpg
-from ..utils.cloudinary_upload import upload_image
-from rest_framework.exceptions import ValidationError
+
+
 import os
-import json
+
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -30,6 +27,16 @@ User = get_user_model()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 from django.utils.encoding import force_str
+
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+
+
+
+
+
+
+
 
 class UpdateProfileImageView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated]
@@ -146,7 +153,6 @@ class PasswordChangeView(generics.UpdateAPIView):
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
 
-
 class PasswordResetView(generics.GenericAPIView):
     serializer_class = PasswordResetSerializer
     permission_classes = [AllowAny]
@@ -159,22 +165,40 @@ class PasswordResetView(generics.GenericAPIView):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
+            # Ze względów bezpieczeństwa zawsze zwracamy 200 OK, nawet jak user nie istnieje
             return response.Response({"detail": "Email wysłany, jeśli użytkownik istnieje"}, status=200)
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
+        
+        # Link do Twojego frontendu
         reset_link = f"http://localhost:5173/reset-password/{uid}/{token}/"
         
+        # --- TWORZENIE MAILA HTML ---
+        subject = "Reset hasła w Twojej Aplikacji"
+        
+        # Przekazujemy zmienne do szablonu
+        context = {
+            "reset_link": reset_link,
+            "user": user, # Opcjonalnie, jeśli chcesz użyć np. user.first_name w mailu
+        }
+        
+        # Renderowanie HTML do stringa
+        html_message = render_to_string('reset_password_email.html', context)
+        
+        # Tworzenie wersji czysto tekstowej (dla anty-spamu i starych klientów)
+        plain_message = strip_tags(html_message)
+
         send_mail(
-            "Reset hasła",
-            f"Kliknij w link aby zresetować hasło: {reset_link}",
-            settings.DEFAULT_FROM_EMAIL,
-            [email],
+            subject=subject,
+            message=plain_message, # Wersja tekstowa
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
             fail_silently=False,
+            html_message=html_message # Wersja HTML (ładna)
         )
 
         return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
-
 
 class PasswordResetConfirmView(generics.GenericAPIView):
     serializer_class = PasswordResetConfirmSerializer

@@ -7,8 +7,16 @@ from django.contrib.auth import get_user_model, password_validation
 from django.utils.http import urlsafe_base64_decode
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import CalendarProduction
 User = get_user_model()
+
+
+
+
+
+
+
 class ProfileImageSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
 
@@ -101,17 +109,29 @@ class PasswordResetSerializer(serializers.Serializer):
 class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
-    new_password = serializers.CharField(min_length=6)
+    new_password = serializers.CharField(style={'input_type': 'password'})
 
     def validate(self, attrs):
+        # 1. Dekodowanie UID i pobieranie użytkownika
         try:
             uid = urlsafe_base64_decode(attrs["uid"]).decode()
             user = User.objects.get(pk=uid)
         except Exception:
             raise serializers.ValidationError("Nieprawidłowy link resetujący")
 
+        # 2. Sprawdzanie tokenu
         if not default_token_generator.check_token(user, attrs["token"]):
             raise serializers.ValidationError("Token wygasł lub jest nieprawidłowy")
+
+        # 3. WALIDACJA HASŁA (To jest nowa część)
+        try:
+            # validate_password sprawdza zasady zdefiniowane w settings.py (AUTH_PASSWORD_VALIDATORS)
+            # Przekazujemy 'user', aby sprawdzić, czy hasło nie jest zbyt podobne do loginu
+           password_validation.validate_password(attrs["new_password"], user)
+        except DjangoValidationError as e:
+            # Przekazujemy błędy z Django do DRF pod kluczem 'new_password'
+            # Frontend otrzyma np.: { "new_password": ["Hasło jest zbyt podobne do nazwy użytkownika.", "Hasło jest zbyt krótkie."] }
+            raise serializers.ValidationError({"new_password": list(e.messages)})
 
         attrs["user"] = user
         return attrs
