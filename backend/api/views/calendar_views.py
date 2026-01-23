@@ -508,8 +508,8 @@ class CalendarPrint(generics.CreateAPIView):
                 upscaled_path = result["local_upscaled"]
                 print(f"Ścieżka do pliku: {upscaled_path}")
             if (loaded_data["bottom"]['type'] == 'image' ):
-                upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
-
+                result = upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
+                data["bottom"]["image_path"] = result["local_upscaled"]
             # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
             if data["top_image"] and data.get("year"):
                 process_top_image_with_year(upscaled_path, data,)

@@ -1,16 +1,10 @@
-
-
 from django.contrib.auth.models import User
-
 from rest_framework.permissions import IsAuthenticated,  AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from ..models import *
 from ..serializers import *
 from ..pagination import *
-
-
 import os
-
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -30,12 +24,6 @@ from django.utils.encoding import force_str
 
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-
-
-
-
-
-
 
 
 class UpdateProfileImageView(generics.UpdateAPIView):
