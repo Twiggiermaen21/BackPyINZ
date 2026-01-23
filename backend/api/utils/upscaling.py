@@ -4,7 +4,7 @@ from bigjpg import Bigjpg, Styles, Noises, EnlargeValues
 
 def upscale_image_with_bigjpg(image_url,export_dir):
     bigjpg = Bigjpg("7636406dfd0e4876ab57c95199cc1d75")
-
+    print("🚀 Starting upscaling with Bigjpg...")
     # Wywołaj API bigjpg
     image_info = bigjpg.enlarge(
         style=Styles.Art,

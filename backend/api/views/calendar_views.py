@@ -448,7 +448,7 @@ class CalendarPrint(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         try:
-            print("📥 Otrzymano żądanie eksportu kalendarza:", request.data)
+           
             calendar_id = request.data.get("id_kalendarz")
             if not calendar_id:
                 return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)

@@ -1,23 +1,11 @@
 # calendar_export/services.py
 
 import os
-import uuid
 import requests
-import json
-from django.conf import settings
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-
-# Importy modeli (zakładam, że są zdefiniowane w innej części projektu, np. .models)
-# Trzeba zaimportować rzeczywiste modele Calendar, CalendarYearData, GeneratedImage, 
-# BottomImage, BottomColor, BottomGradient, ImageForField, etc.
-# Poniżej placeholder:
+import traceback
 from ..models import Calendar, CalendarYearData, GeneratedImage, BottomImage, BottomColor, BottomGradient, ImageForField 
-
-# Zewnętrzna biblioteka Cloudinary
-import cloudinary.uploader 
-
-# Importowanie funkcji pomocniczych
 from .utils import hex_to_rgb, get_gradient_css
 
 def fetch_calendar_data(calendar_id):
@@ -190,254 +178,356 @@ def handle_bottom_data(bottom_obj, export_dir):
         return return_data  # Zwracamy obiekt, a nie wynik metody update()
         
     return None
+
+
+# Upewnij się, że masz zaimportowaną funkcję pomocniczą
+# from utils import get_font_path (zależnie gdzie ją trzymasz)
+
 def process_top_image_with_year(top_image_path, data):
     """
-    Pobiera obraz 'top_image', rysuje na nim tekst roku, 
-    zapisuje i (teoretycznie) wgrywa do Cloudinary.
+    Pobiera obraz 'top_image', skaluje go do wymiarów Główki (3661x2480),
+    rysuje na nim rok zgodnie z danymi z Frontendu i zapisuje.
     """
-    year_data = data.get("year")
     
-    if not top_image_path or not year_data:
-        print("⚠️ Brak ścieżki obrazu lub danych roku.")
-        return None, data.get("top_image")
+    # Dane roku z JSON-a
+    year_data = data.get("year_data") # Uwaga: we frontendzie nazwałeś to 'year_data', sprawdź czy backend dostaje 'year' czy 'year_data'
+    if not year_data:
+        # Fallback, jeśli klucz nazywa się inaczej
+        year_data = data.get("year")
 
-    output_path = top_image_path.replace(".jpg", "_with_text.jpg")
+    print(f"ℹ️ Przetwarzanie Główki (Header)...")
+
+    if not top_image_path or not os.path.exists(top_image_path):
+        print("⚠️ Brak pliku top_image.")
+        return None, None
+
+    # Ścieżka wyjściowa
+    output_path = top_image_path.replace(".jpg", "_header_processed.jpg")
     
     try:
-        # 1. Otwarcie obrazu i pobranie wymiarów
-        image = Image.open(top_image_path)
-        img_width, img_height = image.size
-        print(f"ℹ️ Wymiary obrazu: {img_width}x{img_height}")
-
-        draw = ImageDraw.Draw(image)
-
-        # --- SEKJA SKALOWANIA (POPRAWKA GŁÓWNA) ---
-        # Zakładamy, że "bazowe" wartości w year_data były projektowane dla
-        # standardowej szerokości Full HD (1920px).
-        # Obliczamy mnożnik na podstawie rzeczywistej szerokości obrazu (np. 7K).
-        BASE_REFERENCE_WIDTH = 1920.0
+        # --- 1. KONFIGURACJA WYMIARÓW DOCELOWYCH ---
+        TARGET_WIDTH = 3661
+        TARGET_HEIGHT = 2480
         
-        # Obliczamy scale_factor. Dla obrazu 7680px wyniesie on ok. 4.0.
-        # Używamy max(1.0, ...), żeby nie zmniejszać czcionki na małych obrazkach.
-        scale_factor = max(1.0, img_width / BASE_REFERENCE_WIDTH)
-
-        # Pobieramy bazowy rozmiar i pozycję, zapewniając wartości domyślne
-        base_font_size = int(year_data.get("size", 100))
-        base_pos_x = int(year_data.get("positionX", img_width / 2)) # Domyślnie środek
-        base_pos_y = int(year_data.get("positionY", img_height / 2)) # Domyślnie środek
-
-        # Aplikujemy skalowanie
-        final_font_size = int(base_font_size * scale_factor)
-        final_pos_x = int(base_pos_x * scale_factor)
-        final_pos_y = int(base_pos_y * scale_factor)
-
-        print(f"ℹ️ Skalowanie: {scale_factor:.2f}x.")
-        print(f"ℹ️ Rozmiar czcionki: {base_font_size} -> {final_font_size}px")
-        print(f"ℹ️ Pozycja: ({base_pos_x},{base_pos_y}) -> ({final_pos_x},{final_pos_y})")
-        # -------------------------------------------
-
-
-        # Ładowanie czcionki
-        try:
-            font_path = year_data.get("font")
-            # Jeśli ścieżka nie jest podana lub plik nie istnieje, użyj times.ttf
-            if not font_path or not os.path.exists(font_path):
-                 font_path = "times.ttf"
-
-            # Używamy PRZESKALOWANEGO rozmiaru (final_font_size)
-            font = ImageFont.truetype(font_path, final_font_size)
-        except IOError:
-            # Fallback dla bardzo starych systemów bez times.ttf, 
-            # ale uwaga: load_default() jest ZAWSZE malutka i bitmapowa.
-            font = ImageFont.load_default()
-            print("⚠️ BŁĄD KRYTYCZNY: Nie znaleziono czcionki TTF. Użyto domyślnej (będzie niewidoczna na 7K!). Upewnij się, że masz plik .ttf")
-        
-        text_content = year_data.get("text", "YEAR")
-        text_color = year_data.get("color", "#FFFFFF") # Domyślnie biały
-
-       
-
-
-        # Dodaj tekst używając PRZESKALOWANYCH pozycji
-        print(f"Rysowanie tekstu '{text_content}' na pozycji ({final_pos_x}, {final_pos_y})")  
-        try:
-            draw.text(
-                (final_pos_x, final_pos_y),
-                text_content,
-                font=font,
-                fill=text_color
+        # --- 2. PRZYGOTOWANIE OBRAZU ---
+        with Image.open(top_image_path) as img:
+            img = img.convert("RGBA")
+            
+            # SKALOWANIE I PRZYCINANIE (CROP)
+            # ImageOps.fit automatycznie skaluje i centruje obraz, 
+            # aby wypełnił dokładnie 3661x2480 bez deformacji.
+            img_fitted = ImageOps.fit(
+                img, 
+                (TARGET_WIDTH, TARGET_HEIGHT), 
+                method=Image.Resampling.LANCZOS
             )
-        except Exception as e:  
-            print(f"⚠️ Błąd podczas rysowania: {e}")
+            
+            # --- 3. RYSOWANIE ROKU ---
+            if year_data:
+                draw = ImageDraw.Draw(img_fitted)
+                
+                # Pobieranie danych (Wartości są już w pikselach dla 3661x2480)
+                text_content = str(year_data.get("text", "2025"))
+                # Frontend wysyła np. 400.0, rzutujemy na int
+                font_size = int(float(year_data.get("size", 400))) 
+                
+                # Pobieranie pozycji (X, Y)
+                pos_x = int(float(year_data.get("positionX", 50)))
+                pos_y = int(float(year_data.get("positionY", 50)))
+                
+                text_color = year_data.get("color", "#FFFFFF")
+                font_name = year_data.get("font", "Arial")
+                font_weight = year_data.get("weight", "normal") # Opcjonalnie do obsługi boldów w przyszłości
 
-        # Zapisz wynik
-        image.save(output_path)
-        print(f"✅ Zapisano nowy obraz z tekstem: {output_path}")
+                # Ładowanie czcionki
+                try:
+                    # Używamy naszej funkcji pomocniczej
+                    font_path = get_font_path(font_name)
+                    font = ImageFont.truetype(font_path, font_size)
+                    
+                    print(f"🖌️ Rysowanie roku: '{text_content}' | Font: {font_size}px | Pos: ({pos_x}, {pos_y})")
+                    
+                    draw.text(
+                        (pos_x, pos_y),
+                        text_content,
+                        font=font,
+                        fill=text_color
+                    )
+                except Exception as e:
+                    print(f"⚠️ Błąd rysowania tekstu: {e}")
+                    # Fallback text w razie błędu fontu
+                    draw.text((pos_x, pos_y), text_content, fill=text_color)
 
-        
-        return output_path, output_path 
+            # --- 4. ZAPIS ---
+            img_fitted = img_fitted.convert("RGB") # Konwersja do RGB przed zapisem JPG
+            img_fitted.save(output_path, quality=95, dpi=(300, 300))
+            
+            print(f"✅ Utworzono gotową główkę: {output_path}")
+            return output_path, output_path
 
     except Exception as e:
-        print(f"⚠️ Błąd w process_top_image_with_year: {e}")
+        print(f"❌ Krytyczny błąd w process_top_image_with_year: {e}")
         return None, top_image_path
 
-import traceback
 
+import os
+import traceback
+import requests  # <--- Musisz mieć zainstalowane: pip install requests
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+def load_image_robust(path_or_url):
+    """
+    Inteligentna funkcja otwierająca obrazek.
+    - Jeśli to URL (https://): pobiera go z timeoutem 30s.
+    - Jeśli to ścieżka lokalna (D:\): otwiera plik z dysku.
+    """
+    if not path_or_url:
+        return None
+
+    try:
+        # 1. Obsługa URL (Cloudinary / Internet)
+        if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+            print(f"⬇️ Pobieranie URL: {path_or_url[:50]}...")
+            # Ustawiamy timeout na 30 sekund, żeby uniknąć błędu SSL Handshake
+            response = requests.get(path_or_url, timeout=30)
+            response.raise_for_status() # Rzuć błąd, jeśli status nie jest 200 OK
+            image = Image.open(BytesIO(response.content))
+            return image.convert("RGBA")
+
+        # 2. Obsługa plików lokalnych (Windows paths)
+        else:
+            # Normalizacja ścieżki (zamiana \ na / lub odwrotnie w zależności od systemu)
+            local_path = os.path.normpath(path_or_url)
+            if os.path.exists(local_path):
+                image = Image.open(local_path)
+                return image.convert("RGBA")
+            else:
+                print(f"⚠️ Plik lokalny nie istnieje: {local_path}")
+                return None
+
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout (za długi czas oczekiwania) przy pobieraniu: {path_or_url}")
+        return None
+    except Exception as e:
+        print(f"❌ Błąd otwierania obrazu {path_or_url}: {e}")
+        return None
+
+# --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
     """
-    UKŁAD PRO (300 DPI) - BEZ MALOWANIA TŁA
-    Wymiary pionowe (Y) są obliczane na sztywno:
-    - Główka: 2480 px
-    - Pasek reklamowy: 591 px
-    - Kalendarium: 1654 px
+    Generuje Plecki kalendarza (3661px).
+    Zawiera: Główkę, Białe boxy kalendarium, Nazwy miesięcy, Paski reklamowe.
     """
     
     bottom_data = data.get("bottom", {})
     base_image_path = bottom_data.get("image_path")
 
-    if not base_image_path or not os.path.exists(base_image_path):
-        print(f"❌ Błąd: Nie znaleziono pliku tła: {base_image_path}")
+    if not base_image_path:
+        print("❌ Błąd: Brak ścieżki do tła w JSON.")
         return None
-
+    
     try:
-        # 1. Otwarcie obrazu tła
+        base_image_path = os.path.normpath(base_image_path)
+        if not os.path.exists(base_image_path):
+             print(f"❌ Błąd: Plik tła nie istnieje: {base_image_path}")
+             return None
+
+        # --- KONFIGURACJA WYMIARÓW ---
+        CANVAS_WIDTH = 3661
+        H_HEADER = 2480       
+        H_MONTH_BOX = 1594    
+        H_AD_STRIP = 768      
+        MARGIN_Y = 25 
+        H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
+        TOTAL_HEIGHT = H_HEADER + (3 * H_SEGMENT)
+        
+        # Kalendarium
+        W_MONTH_BOX = 3425
+        MARGIN_X_BOX = (CANVAS_WIDTH - W_MONTH_BOX) // 2
+        MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
+
+        print(f"ℹ️ Start generowania. Wymiary: {CANVAS_WIDTH}x{TOTAL_HEIGHT}")
+
+        # Otwarcie tła
         with Image.open(base_image_path) as src_img:
             base_img = src_img.convert("RGBA")
+            
+        if base_img.size != (CANVAS_WIDTH, TOTAL_HEIGHT):
+            base_img = base_img.resize((CANVAS_WIDTH, TOTAL_HEIGHT), Image.Resampling.LANCZOS)
 
-        img_width, img_height = base_img.size
         draw = ImageDraw.Draw(base_img)
-        print(f"ℹ️ Przetwarzanie: {base_image_path} ({img_width}x{img_height})")
-
-        # --- KONFIGURACJA WYMIARÓW (PRO 300 DPI) ---
-        # Zamiast row_height = img_height / 7, definiujemy konkretne wysokości
-        H_HEADER = 2480    # 21 cm
-        H_AD = 591         # 5 cm
-        H_CAL = 1654       # 14 cm
-        
-        # Obliczamy pozycje Y (początki sekcji)
-        # Gdzie zaczynają się paski reklamowe:
-        y_ad1 = H_HEADER
-        y_ad2 = H_HEADER + H_AD + H_CAL
-        y_ad3 = H_HEADER + (2 * H_AD) + (2 * H_CAL)
-        y_footer = H_HEADER + (3 * H_AD) + (3 * H_CAL)
 
         # =========================================================
-        # KROK A: GŁÓWKA (Index 0)
+        # KROK A: GŁÓWKA
         # =========================================================
-        if upscaled_top_path and os.path.exists(upscaled_top_path):
+        if upscaled_top_path:
+            header_img = load_image_robust(upscaled_top_path)
+            if header_img:
+                header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
+                base_img.paste(header_fitted, (0, 0))
+                print(f"🖼️ Wklejono główkę")
+
+        # --- ROK NA GŁÓWCE ---
+        year_data = data.get("year")
+        if year_data:
             try:
-                with Image.open(upscaled_top_path) as header_src:
-                    header_img = header_src.convert("RGBA")
-                    # Dopasowanie główki do wymiaru 2480 px wysokości
-                    header_fitted = ImageOps.fit(
-                        header_img, 
-                        (img_width, H_HEADER), 
-                        method=Image.Resampling.LANCZOS
-                    )
-                    base_img.paste(header_fitted, (0, 0))
-                    print(f"🖼️ Wklejono Top Image: {upscaled_top_path}")
+                y_text = str(year_data.get("text", "2026"))
+                y_size = int(float(year_data.get("size", 400)))
+                y_posX = int(float(year_data.get("positionX", 50)))
+                y_posY = int(float(year_data.get("positionY", 50)))
+                y_color = year_data.get("color", "#d40808")
+                y_font_name = year_data.get("font", "Arial")
+                
+                font_path = get_font_path(y_font_name)
+                font = ImageFont.truetype(font_path, y_size)
+                draw.text((y_posX, y_posY), y_text, font=font, fill=y_color)
             except Exception as e:
-                print(f"⚠️ Błąd przy wklejaniu główki: {e}")
-        
-        # UWAGA: Usunięto KROK B (rysowanie białych prostokątów), tło zostaje oryginalne.
+                print(f"⚠️ Błąd rysowania roku: {e}")
 
         # =========================================================
-        # KROK C: OBLICZENIE ŚRODKÓW PÓL (Index 2, 4, 6 + Stopka)
+        # KROK C: PRZETWARZANIE PÓL (KALENDARIUM + REKLAMA)
         # =========================================================
-        # Obliczamy środek każdego paska reklamowego, żeby tam wstawić tekst/logo
-        field_centers_y = {
-            1: int(y_ad1 + (H_AD / 2)),    # Środek paska 1
-            2: int(y_ad2 + (H_AD / 2)),    # Środek paska 2
-            3: int(y_ad3 + (H_AD / 2)),    # Środek paska 3
-            4: int(y_footer + 300)         # Środek stopki (orientacyjnie, +300px od góry stopki)
-        }
-
         raw_fields = data.get("fields", {})
-        items_to_draw = {}
-
-        # Przetwarzanie danych wejściowych
-        for key, item in raw_fields.items():
-            if not isinstance(item, dict): continue
+        
+        for i in range(1, 4):
+            prev_h = (i - 1) * H_SEGMENT
             
-            f_num = None
-            str_key = str(key)
-            # Obsługa kluczy "1", "2", "3", "4"
-            if str_key.isdigit():
-                f_num = int(str_key)
-            if "field_number" in item:
-                f_num = int(item["field_number"])
-
-            if f_num and f_num in field_centers_y:
-                if "text" in item:
-                    items_to_draw[f_num] = item
-                    items_to_draw[f_num]["type"] = "text"
-                elif "image_url" in item:
-                    items_to_draw[f_num] = item
-                    items_to_draw[f_num]["type"] = "image"
-
-        # =========================================================
-        # KROK D: RYSOWANIE TREŚCI (BEZ TŁA)
-        # =========================================================
-        center_x_fixed = img_width / 2
-
-        for f_num, center_y in field_centers_y.items():
-            if f_num not in items_to_draw:
-                continue
-
-            item = items_to_draw[f_num]
+            # Y Starty
+            box_start_y = H_HEADER + prev_h + MARGIN_Y
+            strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
             
-            # --- TEKST ---
-            if item["type"] == "text":
-                text = item["text"]
-                # Font size dostosowany do wysokości paska (ok. 50% wysokości paska)
-                font_size = int(H_AD * 0.5)
+            print(f"🔹 Segment {i}: Box Y={box_start_y}, Pasek Y={strip_start_y}")
 
-                try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
-                    font = ImageFont.load_default()
+            # 1. RYSOWANIE KALENDARIUM (BIAŁY BOX + MIESIĄC)
+            try:
+                # Biały box + ramka
+                box_coords = [(MARGIN_X_BOX, box_start_y), (MARGIN_X_BOX + W_MONTH_BOX, box_start_y + H_MONTH_BOX)]
+                draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
+                
+                # Nazwa miesiąca
+                month_name = MONTH_NAMES[i-1]
+                m_font_path = get_font_path("Arial") 
+                m_font = ImageFont.truetype(m_font_path, 150)
+                m_color = "#1d4ed8" # blue-700
+                
+                left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
+                m_w, m_h = right - left, bottom - top
+                m_x = (CANVAS_WIDTH - m_w) / 2
+                m_y = box_start_y + 40 
+                draw.text((m_x, m_y), month_name, font=m_font, fill=m_color)
+                
+                # Opcjonalnie: Napis [Siatka dni]
+                g_text = "[Siatka dni]"
+                g_font = ImageFont.truetype(m_font_path, 100)
+                gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
+                gx = (CANVAS_WIDTH - (gr - gl)) / 2
+                gy = box_start_y + (H_MONTH_BOX - (gb - gt)) / 2 - gt
+                draw.text((gx, gy), g_text, font=g_font, fill="#9ca3af")
 
-                # Nowa metoda obliczania rozmiaru tekstu (bezpieczniejsza)
-                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-                text_w = right - left
-                text_h = bottom - top
+            except Exception as e:
+                print(f"⚠️ Błąd rysowania kalendarium {i}: {e}")
 
-                # Rysowanie tekstu (centrowanie)
-                draw.text(
-                    (center_x_fixed - text_w/2, center_y - text_h/2 - top), 
-                    text, font=font, fill="black"
-                )
+            # 2. PASEK REKLAMOWY - KONFIGURACJA
+            config = raw_fields.get(str(i)) or raw_fields.get(i)
+            
+            scale = 1.0
+            pos_x = 0
+            pos_y = 0
 
-            # --- OBRAZ ---
-            elif item["type"] == "image":
-                img_url = item["image_url"]
-                if os.path.exists(img_url):
+            if config:
+                # TEKST REKLAMOWY
+                if config.get("text"):
                     try:
-                        with Image.open(img_url) as overlay_src:
-                            overlay = overlay_src.convert("RGBA")
-                            
-                            # Skalowanie obrazka, żeby nie wyszedł poza pasek (z marginesem)
-                            max_w = int(img_width * 0.9)
-                            max_h = int(H_AD * 0.9) # 90% wysokości paska
-                            
-                            # Zachowanie proporcji (thumbnail robi to automatycznie)
-                            overlay.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
-                            
-                            paste_x = int(center_x_fixed - overlay.width/2)
-                            paste_y = int(center_y - overlay.height/2)
-                            
-                            # Używamy alpha_composite dla lepszej jakości przezroczystości
-                            base_img.alpha_composite(overlay, dest=(paste_x, paste_y))
+                        text = config["text"]
+                        f_size = int(float(config.get("size", 200)))
+                        if f_size < 10: f_size = 200
+                        f_color = config.get("color", "#000000")
+                        f_font_name = config.get("font", "Arial")
+                        
+                        font_path = get_font_path(f_font_name)
+                        font = ImageFont.truetype(font_path, f_size)
+                        
+                        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                        text_w, text_h = right - left, bottom - top
+                        
+                        text_x = (CANVAS_WIDTH - text_w) / 2
+                        text_y = strip_start_y + (H_AD_STRIP - text_h) / 2 - top
+                        draw.text((text_x, text_y), text, font=font, fill=f_color)
                     except Exception as e:
-                        print(f"⚠️ Błąd obrazka field {f_num}: {e}")
+                        print(f"⚠️ Błąd tekstu w polu {i}: {e}")
+                
+                # Parametry obrazka
+                try:
+                    scale = float(config.get("size", 1.0))
+                    pos_x = int(float(config.get("positionX", 0)))
+                    pos_y = int(float(config.get("positionY", 0)))
+                except:
+                    pass 
+
+            # 3. PASEK REKLAMOWY - OBRAZKI
+            for key, val in raw_fields.items():
+                if not isinstance(val, dict): continue
+                
+                if val.get("field_number") == i and val.get("image_url"):
+                    img_url = val.get("image_url")
+                    
+                    # UŻYWAMY FUNKCJI Z RETRY
+                    overlay = load_image_robust(img_url)
+                    
+                    if overlay:
+                        try:
+                            new_w = int(overlay.width * scale)
+                            new_h = int(overlay.height * scale)
+                            if new_w <= 0: new_w = 1
+                            if new_h <= 0: new_h = 1
+                            
+                            overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                            
+                            paste_x = pos_x
+                            paste_y = strip_start_y + pos_y
+                            
+                            print(f"   🖼️ Wklejanie {key} na ({paste_x}, {paste_y})")
+                            base_img.paste(overlay, (paste_x, paste_y), overlay)
+                        except Exception as e:
+                            print(f"⚠️ Błąd wklejania {key}: {e}")
 
         # 4. ZAPIS
-        base_img = base_img.convert("RGB") # Konwersja do RGB (bezpieczniejsza dla druku)
-        base_img.save(base_image_path, dpi=(300, 300))
-        print(f"✅ Nadpisano plik: {base_image_path}")
+        base_img = base_img.convert("RGB")
+        base_img.save(base_image_path, dpi=(300, 300), quality=95)
+        print(f"✅ Sukces: {base_image_path}")
         return base_image_path
 
     except Exception as e:
-        print(f"❌ Błąd: {e}")
+        print(f"❌ Krytyczny błąd: {e}")
         traceback.print_exc()
-        return None 
+        return None
+def get_font_path(font_name):
+    import os
+    """
+    Mapuje nazwy fontów z Frontendu na pliki w folderze 'fonts' (obok skryptu).
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    fonts_dir = os.path.join(base_dir, "fonts")
+
+    font_map = {
+        "Arial": "arial.ttf",
+        "Courier New": "cour.ttf",
+        "Georgia": "georgia.ttf",
+        "Tahoma": "tahoma.ttf",
+        "Verdana": "verdana.ttf",
+        "Roboto": "Roboto-Regular.ttf", 
+    }
+
+    # Pobieramy nazwę pliku, domyślnie arial.ttf
+    filename = font_map.get(font_name, "arial.ttf")
+    font_path = os.path.join(fonts_dir, filename)
+
+    if not os.path.exists(font_path):
+        # Fallback na Arial w folderze fonts
+        fallback = os.path.join(fonts_dir, "arial.ttf")
+        if os.path.exists(fallback):
+            return fallback
+        return "arial.ttf" # Systemowy
+
+    return font_path
