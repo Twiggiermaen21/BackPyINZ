@@ -7,9 +7,9 @@ def upscale_image_with_bigjpg(image_url,export_dir):
     print("🚀 Starting upscaling with Bigjpg...")
     # Wywołaj API bigjpg
     image_info = bigjpg.enlarge(
-        style=Styles.Art,
+        style=Styles.Photo,
         noise=Noises.Highest,
-        enlarge_value=EnlargeValues._4x,
+        enlarge_value=EnlargeValues._8x,
         image_url=image_url
     )
 

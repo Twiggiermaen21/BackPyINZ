@@ -1,10 +1,11 @@
 from django.urls import path
-
+from .views.pom import download_single_image_view
 from .views.metadata_views import *
 from .views.profile_views import *
 from .views.calendar_views import *
 from .views.image_views import *
 urlpatterns=[
+path('download-img-gallery-bejbe5j6bje65jbe65ctwcc4ha7hrsb/<int:pk>', download_single_image_view, name='download_single_image'),
 
 path('generate/', GenerateImage.as_view(), name='generate-image'),
 path('generate-image-to-image-sdxl/', GenerateImageToImageSDXLView.as_view(), name='generate-image-to-image-sdxl'),
