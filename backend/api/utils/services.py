@@ -270,8 +270,9 @@ def process_top_image_with_year(top_image_path, data):
 # --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
     """
-    Generuje Plecki kalendarza (3661px).
-    Zawiera: Główkę, Białe boxy kalendarium, Nazwy miesięcy, Paski reklamowe.
+    Generuje Plecki kalendarza.
+    Zastosowano mechanizm 'overflow: hidden' dla pasków reklamowych poprzez
+    rysowanie ich na osobnych warstwach przed nałożeniem na tło.
     """
     
     bottom_data = data.get("bottom", {})
@@ -347,23 +348,21 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         for i in range(1, 4):
             prev_h = (i - 1) * H_SEGMENT
             
-            # Y Starty
+            # Y Starty na głównym płótnie
             box_start_y = H_HEADER + prev_h + MARGIN_Y
             strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
             
             print(f"🔹 Segment {i}: Box Y={box_start_y}, Pasek Y={strip_start_y}")
 
-            # 1. RYSOWANIE KALENDARIUM (BIAŁY BOX + MIESIĄC)
+            # 1. RYSOWANIE KALENDARIUM (Bez zmian)
             try:
-                # Biały box + ramka
                 box_coords = [(MARGIN_X_BOX, box_start_y), (MARGIN_X_BOX + W_MONTH_BOX, box_start_y + H_MONTH_BOX)]
                 draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
                 
-                # Nazwa miesiąca
                 month_name = MONTH_NAMES[i-1]
                 m_font_path = get_font_path("Arial") 
                 m_font = ImageFont.truetype(m_font_path, 150)
-                m_color = "#1d4ed8" # blue-700
+                m_color = "#1d4ed8"
                 
                 left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
                 m_w, m_h = right - left, bottom - top
@@ -371,7 +370,6 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 m_y = box_start_y + 40 
                 draw.text((m_x, m_y), month_name, font=m_font, fill=m_color)
                 
-                # Opcjonalnie: Napis [Siatka dni]
                 g_text = "[Siatka dni]"
                 g_font = ImageFont.truetype(m_font_path, 100)
                 gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
@@ -382,7 +380,16 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             except Exception as e:
                 print(f"⚠️ Błąd rysowania kalendarium {i}: {e}")
 
-            # 2. PASEK REKLAMOWY - KONFIGURACJA
+            # ---------------------------------------------------------
+            # 2. PASEK REKLAMOWY Z EFEKTEM OVERFLOW: HIDDEN
+            # ---------------------------------------------------------
+            
+            # Tworzymy NOWY, tymczasowy obrazek tylko dla paska reklamowego.
+            # Dzięki temu wszystko co wyjdzie poza wymiar (CANVAS_WIDTH, H_AD_STRIP) zniknie.
+            # RGBA (255, 255, 255, 0) oznacza w pełni przezroczyste tło.
+            strip_img = Image.new("RGBA", (CANVAS_WIDTH, H_AD_STRIP), (255, 255, 255, 0))
+            strip_draw = ImageDraw.Draw(strip_img)
+
             config = raw_fields.get(str(i)) or raw_fields.get(i)
             
             scale = 1.0
@@ -390,7 +397,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             pos_y = 0
 
             if config:
-                # TEKST REKLAMOWY
+                # A. TEKST REKLAMOWY
                 if config.get("text"):
                     try:
                         text = config["text"]
@@ -402,16 +409,19 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                         font_path = get_font_path(f_font_name)
                         font = ImageFont.truetype(font_path, f_size)
                         
-                        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                        left, top, right, bottom = strip_draw.textbbox((0, 0), text, font=font)
                         text_w, text_h = right - left, bottom - top
                         
+                        # Pozycjonowanie tekstu względem PASKA (strip_img), a nie całego kalendarza
+                        # 0,0 to lewy górny róg paska reklamowego
                         text_x = (CANVAS_WIDTH - text_w) / 2
-                        text_y = strip_start_y + (H_AD_STRIP - text_h) / 2 - top
-                        draw.text((text_x, text_y), text, font=font, fill=f_color)
+                        text_y = (H_AD_STRIP - text_h) / 2 - top 
+                        
+                        strip_draw.text((text_x, text_y), text, font=font, fill=f_color)
                     except Exception as e:
                         print(f"⚠️ Błąd tekstu w polu {i}: {e}")
                 
-                # Parametry obrazka
+                # Parametry do obrazka
                 try:
                     scale = float(config.get("size", 1.0))
                     pos_x = int(float(config.get("positionX", 0)))
@@ -419,14 +429,13 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 except:
                     pass 
 
-            # 3. PASEK REKLAMOWY - OBRAZKI
+            # B. OBRAZKI REKLAMOWE
             for key, val in raw_fields.items():
                 if not isinstance(val, dict): continue
                 
                 if val.get("field_number") == i and val.get("image_url"):
                     img_url = val.get("image_url")
                     
-                    # UŻYWAMY FUNKCJI Z RETRY
                     overlay = load_image_robust(img_url)
                     
                     if overlay:
@@ -438,13 +447,27 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                             
                             overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
                             
+                            # Wklejamy na strip_img.
+                            # Używamy pos_x i pos_y BEZ dodawania strip_start_y,
+                            # ponieważ rysujemy na lokalnym systemie współrzędnych paska.
                             paste_x = pos_x
-                            paste_y = strip_start_y + pos_y
+                            paste_y = pos_y
                             
-                            print(f"   🖼️ Wklejanie {key} na ({paste_x}, {paste_y})")
-                            base_img.paste(overlay, (paste_x, paste_y), overlay)
+                            print(f"   🖼️ Wklejanie {key} na pasek ({paste_x}, {paste_y})")
+                            
+                            # Wklejenie z obsługą przezroczystości
+                            strip_img.paste(overlay, (paste_x, paste_y), overlay)
+                            
                         except Exception as e:
                             print(f"⚠️ Błąd wklejania {key}: {e}")
+
+            # ---------------------------------------------------------
+            # FINALIZACJA PASKA: Nałożenie gotowego paska na główne tło
+            # ---------------------------------------------------------
+            # Wklejamy przygotowany pasek (strip_img) w odpowiednie miejsce (strip_start_y) na głównym tle.
+            # strip_img działa jak maska - to co się na nim nie zmieściło, fizycznie nie istnieje.
+            base_img.paste(strip_img, (0, strip_start_y), strip_img)
+
 
         # 4. ZAPIS
         base_img = base_img.convert("RGB")
@@ -454,5 +477,6 @@ def process_calendar_bottom(data, upscaled_top_path=None):
 
     except Exception as e:
         print(f"❌ Krytyczny błąd: {e}")
+        import traceback
         traceback.print_exc()
         return None
