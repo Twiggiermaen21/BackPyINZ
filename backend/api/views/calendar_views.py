@@ -485,8 +485,10 @@ class CalendarPrint(generics.CreateAPIView):
             # 6. Obsługa pól (Field1-3 + prefetched)
             all_fields = []
             for i in range(1, 4):
+                print(f"Przetwarzanie pola {i}...")
+                print(f"   Typ treści: {getattr(calendar, f'field{i}_content_type')}")
                 all_fields.append((getattr(calendar, f"field{i}", None), i)) 
-
+            
             for img in getattr(calendar, "prefetched_images_for_fields", []):
                 all_fields.append((img, f"prefetched_image_{img.id}"))
 

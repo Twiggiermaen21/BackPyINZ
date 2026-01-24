@@ -88,7 +88,9 @@ def handle_field_data(field_obj, field_number, export_dir):
         return {
             "text": field_obj.text,
             "font": getattr(field_obj, "font", None),
-            "weight": getattr(field_obj, "weight", None)
+            "weight": getattr(field_obj, "weight", None),
+            "size": getattr(field_obj, "size", None),
+            "color": getattr(field_obj, "color", None),
         }
 
     return None
@@ -266,14 +268,8 @@ def process_top_image_with_year(top_image_path, data):
         return None, top_image_path
 
 
-
 # --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
-    """
-    Generuje Plecki kalendarza.
-    Zastosowano mechanizm 'overflow: hidden' dla pasków reklamowych poprzez
-    rysowanie ich na osobnych warstwach przed nałożeniem na tło.
-    """
     
     bottom_data = data.get("bottom", {})
     base_image_path = bottom_data.get("image_path")
@@ -294,15 +290,20 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         H_MONTH_BOX = 1594    
         H_AD_STRIP = 768      
         MARGIN_Y = 25 
+        
+        # --- NOWA MATEMATYKA (PADDING Z OBU STRON) ---
+        PADDING_X = 112  # Padding z lewej i prawej
+        
+        # Szerokość robocza = Całość - (2 * Padding)
+        # 3661 - 224 = 3437 px
+        W_CONTENT = CANVAS_WIDTH - (2 * PADDING_X) 
+        
         H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
         TOTAL_HEIGHT = H_HEADER + (3 * H_SEGMENT)
         
-        # Kalendarium
-        W_MONTH_BOX = 3425
-        MARGIN_X_BOX = (CANVAS_WIDTH - W_MONTH_BOX) // 2
         MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
 
-        print(f"ℹ️ Start generowania. Wymiary: {CANVAS_WIDTH}x{TOTAL_HEIGHT}")
+        print(f"ℹ️ Start generowania. Padding: {PADDING_X}px, Szerokość robocza: {W_CONTENT}px")
 
         # Otwarcie tła
         with Image.open(base_image_path) as src_img:
@@ -321,9 +322,8 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             if header_img:
                 header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
                 base_img.paste(header_fitted, (0, 0))
-                print(f"🖼️ Wklejono główkę")
 
-        # --- ROK NA GŁÓWCE ---
+        # ROK NA GŁÓWCE
         year_data = data.get("year")
         if year_data:
             try:
@@ -337,26 +337,26 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 font_path = get_font_path(y_font_name)
                 font = ImageFont.truetype(font_path, y_size)
                 draw.text((y_posX, y_posY), y_text, font=font, fill=y_color)
-            except Exception as e:
-                print(f"⚠️ Błąd rysowania roku: {e}")
+            except Exception:
+                pass
 
         # =========================================================
-        # KROK C: PRZETWARZANIE PÓL (KALENDARIUM + REKLAMA)
+        # KROK C: PRZETWARZANIE PÓL
         # =========================================================
         raw_fields = data.get("fields", {})
         
         for i in range(1, 4):
             prev_h = (i - 1) * H_SEGMENT
             
-            # Y Starty na głównym płótnie
+            # Y startowe na głównym płótnie
             box_start_y = H_HEADER + prev_h + MARGIN_Y
             strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
             
-            print(f"🔹 Segment {i}: Box Y={box_start_y}, Pasek Y={strip_start_y}")
-
-            # 1. RYSOWANIE KALENDARIUM (Bez zmian)
+            # 1. RYSOWANIE KALENDARIUM (BOX)
+            # Rysujemy boxa również z uwzględnieniem paddingu, żeby pasował do reklam
             try:
-                box_coords = [(MARGIN_X_BOX, box_start_y), (MARGIN_X_BOX + W_MONTH_BOX, box_start_y + H_MONTH_BOX)]
+                # Box zaczyna się na 112px i ma szerokość 3437px
+                box_coords = [(PADDING_X, box_start_y), (PADDING_X + W_CONTENT, box_start_y + H_MONTH_BOX)]
                 draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
                 
                 month_name = MONTH_NAMES[i-1]
@@ -364,16 +364,23 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 m_font = ImageFont.truetype(m_font_path, 150)
                 m_color = "#1d4ed8"
                 
+                # Centrowanie tekstu wewnątrz pola roboczego
                 left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
-                m_w, m_h = right - left, bottom - top
-                m_x = (CANVAS_WIDTH - m_w) / 2
+                m_w = right - left
+                
+                # Środek pola roboczego to: PADDING_X + (W_CONTENT / 2)
+                center_x = PADDING_X + (W_CONTENT / 2)
+                m_x = center_x - (m_w / 2)
                 m_y = box_start_y + 40 
+                
                 draw.text((m_x, m_y), month_name, font=m_font, fill=m_color)
                 
+                # Siatka dni
                 g_text = "[Siatka dni]"
                 g_font = ImageFont.truetype(m_font_path, 100)
                 gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
-                gx = (CANVAS_WIDTH - (gr - gl)) / 2
+                gw = gr - gl
+                gx = center_x - (gw / 2)
                 gy = box_start_y + (H_MONTH_BOX - (gb - gt)) / 2 - gt
                 draw.text((gx, gy), g_text, font=g_font, fill="#9ca3af")
 
@@ -381,61 +388,108 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 print(f"⚠️ Błąd rysowania kalendarium {i}: {e}")
 
             # ---------------------------------------------------------
-            # 2. PASEK REKLAMOWY Z EFEKTEM OVERFLOW: HIDDEN
+            # 2. PASEK REKLAMOWY (OVERFLOW HIDDEN Z OBU STRON)
             # ---------------------------------------------------------
             
-            # Tworzymy NOWY, tymczasowy obrazek tylko dla paska reklamowego.
-            # Dzięki temu wszystko co wyjdzie poza wymiar (CANVAS_WIDTH, H_AD_STRIP) zniknie.
-            # RGBA (255, 255, 255, 0) oznacza w pełni przezroczyste tło.
-            strip_img = Image.new("RGBA", (CANVAS_WIDTH, H_AD_STRIP), (255, 255, 255, 0))
+            # Tworzymy tymczasowy obrazek o szerokości DOKŁADNIE obszaru roboczego (3437px)
+            # Wszystko co wystaje poza wymiar (0 do 3437) na tym obrazku, zniknie.
+            strip_img = Image.new("RGBA", (W_CONTENT, H_AD_STRIP), (255, 255, 255, 0))
             strip_draw = ImageDraw.Draw(strip_img)
-
+           
             config = raw_fields.get(str(i)) or raw_fields.get(i)
             
+            # Wartości domyślne (zostaną nadpisane jeśli parsowanie się uda)
             scale = 1.0
             pos_x = 0
             pos_y = 0
 
             if config:
-                # A. TEKST REKLAMOWY
+                print(f"🔍 Przetwarzanie konfiguracji dla pola {i}...")
+                print(f"   Surowe dane: {config}")
+                # =========================================================
+                # A. PRZETWARZANIE TEKSTU Z WALIDACJĄ
+                # =========================================================
                 if config.get("text"):
+                    text_content = config["text"]
+                    
+                    # 1. Walidacja Rozmiaru Czcionki (size)
+                    raw_size = config.get("size", 200)
                     try:
-                        text = config["text"]
-                        f_size = int(float(config.get("size", 200)))
-                        if f_size < 10: f_size = 200
-                        f_color = config.get("color", "#000000")
-                        f_font_name = config.get("font", "Arial")
-                        
-                        font_path = get_font_path(f_font_name)
+                        f_size = int(float(raw_size))
+                        if f_size < 10:
+                            print(f"⚠️ Ostrzeżenie: Rozmiar czcionki '{f_size}' jest za mały. Ustawiam 200.")
+                            f_size = 200
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Błąd parsowania 'size' dla tekstu. Otrzymano: '{raw_size}'. Błąd: {e}. Używam domyślnego: 200.")
+                        f_size = 200
+
+                    # 2. Kolor (color)
+                    f_color = config.get("color", "#000000") # Pillow zazwyczaj rzuci błędem dopiero przy rysowaniu
+
+                    # 3. Czcionka (font)
+                    f_font_name = config.get("font", "Arial")
+                    font_path = get_font_path(f_font_name)
+                    
+                    try:
                         font = ImageFont.truetype(font_path, f_size)
                         
-                        left, top, right, bottom = strip_draw.textbbox((0, 0), text, font=font)
+                        # Obliczanie wymiarów tekstu
+                        left, top, right, bottom = strip_draw.textbbox((0, 0), text_content, font=font)
                         text_w, text_h = right - left, bottom - top
                         
-                        # Pozycjonowanie tekstu względem PASKA (strip_img), a nie całego kalendarza
-                        # 0,0 to lewy górny róg paska reklamowego
-                        text_x = (CANVAS_WIDTH - text_w) / 2
+                        # Centrowanie na środku paska (0 do W_CONTENT)
+                        text_x = (W_CONTENT - text_w) / 2
                         text_y = (H_AD_STRIP - text_h) / 2 - top 
                         
-                        strip_draw.text((text_x, text_y), text, font=font, fill=f_color)
-                    except Exception as e:
-                        print(f"⚠️ Błąd tekstu w polu {i}: {e}")
-                
-                # Parametry do obrazka
-                try:
-                    scale = float(config.get("size", 1.0))
-                    pos_x = int(float(config.get("positionX", 0)))
-                    pos_y = int(float(config.get("positionY", 0)))
-                except:
-                    pass 
+                        strip_draw.text((text_x, text_y), text_content, font=font, fill=f_color)
+                        print(f"   📝 Narysowano tekst: '{text_content[:20]}...' (Size: {f_size}, Font: {f_font_name})")
 
-            # B. OBRAZKI REKLAMOWE
+                    except OSError:
+                        print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}. Tekst nie zostanie narysowany.")
+                    except Exception as e:
+                        print(f"❌ Nieoczekiwany błąd podczas rysowania tekstu: {e}")
+
+                # =========================================================
+                # B. WALIDACJA PARAMETRÓW POZYCYJNYCH (DLA OBRAZKÓW)
+                # =========================================================
+                # Te zmienne (scale, pos_x, pos_y) zostaną użyte w pętli obrazków poniżej
+                
+                # 1. Skala (size) - w kontekście obrazka to mnożnik
+                raw_scale = config.get("size")
+                if raw_scale is not None:
+                    try:
+                        scale = float(raw_scale)
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Błąd parsowania 'size' (skala obrazka). Otrzymano: '{raw_scale}'. Błąd: {e}. Używam domyślnego: 1.0.")
+                        scale = 1.0
+
+                # 2. Pozycja X (positionX)
+                raw_pos_x = config.get("positionX")
+                if raw_pos_x is not None:
+                    try:
+                        pos_x = int(float(raw_pos_x))
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Błąd parsowania 'positionX'. Otrzymano: '{raw_pos_x}'. Błąd: {e}. Używam domyślnego: 0.")
+                        pos_x = 0
+
+                # 3. Pozycja Y (positionY)
+                raw_pos_y = config.get("positionY")
+                if raw_pos_y is not None:
+                    try:
+                        pos_y = int(float(raw_pos_y))
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Błąd parsowania 'positionY'. Otrzymano: '{raw_pos_y}'. Błąd: {e}. Używam domyślnego: 0.")
+                        pos_y = 0
+
+                print(f"   ⚙️ Ustawienia obrazków: Skala={scale}, X={pos_x}, Y={pos_y}")
+
+          
+
+            # B. Obrazki
             for key, val in raw_fields.items():
                 if not isinstance(val, dict): continue
-                
                 if val.get("field_number") == i and val.get("image_url"):
                     img_url = val.get("image_url")
-                    
                     overlay = load_image_robust(img_url)
                     
                     if overlay:
@@ -447,26 +501,19 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                             
                             overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
                             
-                            # Wklejamy na strip_img.
-                            # Używamy pos_x i pos_y BEZ dodawania strip_start_y,
-                            # ponieważ rysujemy na lokalnym systemie współrzędnych paska.
-                            paste_x = pos_x
-                            paste_y = pos_y
-                            
-                            print(f"   🖼️ Wklejanie {key} na pasek ({paste_x}, {paste_y})")
-                            
-                            # Wklejenie z obsługą przezroczystości
-                            strip_img.paste(overlay, (paste_x, paste_y), overlay)
+                            # Wklejamy na warstwę paska.
+                            # Jeśli użytkownik ustawił positionX na -50, zdjęcie zostanie ucięte z lewej.
+                            # Jeśli ustawił positionX na 3400 (przy szerokości zdjęcia 200), zostanie ucięte z prawej.
+                            strip_img.paste(overlay, (pos_x, pos_y), overlay)
                             
                         except Exception as e:
-                            print(f"⚠️ Błąd wklejania {key}: {e}")
+                            print(f"⚠️ Błąd wklejania obrazka: {e}")
 
             # ---------------------------------------------------------
-            # FINALIZACJA PASKA: Nałożenie gotowego paska na główne tło
+            # FINALIZACJA: WKLEJENIE NA TŁO
             # ---------------------------------------------------------
-            # Wklejamy przygotowany pasek (strip_img) w odpowiednie miejsce (strip_start_y) na głównym tle.
-            # strip_img działa jak maska - to co się na nim nie zmieściło, fizycznie nie istnieje.
-            base_img.paste(strip_img, (0, strip_start_y), strip_img)
+            # Wklejamy gotowy pasek w punkcie (112, Y)
+            base_img.paste(strip_img, (PADDING_X, strip_start_y), strip_img)
 
 
         # 4. ZAPIS
@@ -480,3 +527,4 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         import traceback
         traceback.print_exc()
         return None
+   
