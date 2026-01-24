@@ -6,7 +6,7 @@ from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import traceback
 from ..models import Calendar, CalendarYearData, GeneratedImage, BottomImage, BottomColor, BottomGradient, ImageForField 
-from .utils import hex_to_rgb, get_gradient_css
+from .utils import hex_to_rgb, get_gradient_css, get_font_path, load_image_robust
 
 def fetch_calendar_data(calendar_id):
     """
@@ -92,10 +92,6 @@ def handle_field_data(field_obj, field_number, export_dir):
         }
 
     return None
-
-
-
-
 
 def handle_top_image(calendar, export_dir):
     """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
@@ -270,48 +266,6 @@ def process_top_image_with_year(top_image_path, data):
         return None, top_image_path
 
 
-import os
-import traceback
-import requests  # <--- Musisz mieć zainstalowane: pip install requests
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
-def load_image_robust(path_or_url):
-    """
-    Inteligentna funkcja otwierająca obrazek.
-    - Jeśli to URL (https://): pobiera go z timeoutem 30s.
-    - Jeśli to ścieżka lokalna (D:\): otwiera plik z dysku.
-    """
-    if not path_or_url:
-        return None
-
-    try:
-        # 1. Obsługa URL (Cloudinary / Internet)
-        if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-            print(f"⬇️ Pobieranie URL: {path_or_url[:50]}...")
-            # Ustawiamy timeout na 30 sekund, żeby uniknąć błędu SSL Handshake
-            response = requests.get(path_or_url, timeout=30)
-            response.raise_for_status() # Rzuć błąd, jeśli status nie jest 200 OK
-            image = Image.open(BytesIO(response.content))
-            return image.convert("RGBA")
-
-        # 2. Obsługa plików lokalnych (Windows paths)
-        else:
-            # Normalizacja ścieżki (zamiana \ na / lub odwrotnie w zależności od systemu)
-            local_path = os.path.normpath(path_or_url)
-            if os.path.exists(local_path):
-                image = Image.open(local_path)
-                return image.convert("RGBA")
-            else:
-                print(f"⚠️ Plik lokalny nie istnieje: {local_path}")
-                return None
-
-    except requests.exceptions.Timeout:
-        print(f"❌ Timeout (za długi czas oczekiwania) przy pobieraniu: {path_or_url}")
-        return None
-    except Exception as e:
-        print(f"❌ Błąd otwierania obrazu {path_or_url}: {e}")
-        return None
 
 # --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
@@ -502,32 +456,3 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         print(f"❌ Krytyczny błąd: {e}")
         traceback.print_exc()
         return None
-def get_font_path(font_name):
-    import os
-    """
-    Mapuje nazwy fontów z Frontendu na pliki w folderze 'fonts' (obok skryptu).
-    """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    fonts_dir = os.path.join(base_dir, "fonts")
-
-    font_map = {
-        "Arial": "arial.ttf",
-        "Courier New": "cour.ttf",
-        "Georgia": "georgia.ttf",
-        "Tahoma": "tahoma.ttf",
-        "Verdana": "verdana.ttf",
-        "Roboto": "Roboto-Regular.ttf", 
-    }
-
-    # Pobieramy nazwę pliku, domyślnie arial.ttf
-    filename = font_map.get(font_name, "arial.ttf")
-    font_path = os.path.join(fonts_dir, filename)
-
-    if not os.path.exists(font_path):
-        # Fallback na Arial w folderze fonts
-        fallback = os.path.join(fonts_dir, "arial.ttf")
-        if os.path.exists(fallback):
-            return fallback
-        return "arial.ttf" # Systemowy
-
-    return font_path
