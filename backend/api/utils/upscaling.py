@@ -9,7 +9,7 @@ def upscale_image_with_bigjpg(image_url,export_dir):
     image_info = bigjpg.enlarge(
         style=Styles.Photo,
         noise=Noises.Highest,
-        enlarge_value=EnlargeValues._8x,
+        enlarge_value=EnlargeValues._4x,
         image_url=image_url
     )
 
@@ -29,17 +29,6 @@ def upscale_image_with_bigjpg(image_url,export_dir):
     upscaled_path = os.path.join(export_dir, f"enlarged_image_{next_number}.png")
     image_info.download(upscaled_path)
     print(f"✅ Image saved to: {upscaled_path}")
-
-    # Katalog na wersję 300dpi
-    # dpi_dir = "300dpi"
-    # os.makedirs(dpi_dir, exist_ok=True)
-
-    # dpi_path = os.path.join(dpi_dir, f"enlarged_image_{next_number}.png")
-
-    # Zapis z DPI=300
-    # img = Image.open(upscaled_path)
-    # img.save(dpi_path, dpi=(300, 300))
-    # print(f"✅ Saved 300 DPI to: {dpi_path}")
 
     return {
         "bigjpg_url": image_info.get_url(),
