@@ -1,5 +1,3 @@
-
-from unittest import result
 import uuid
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
@@ -12,9 +10,7 @@ from rest_framework.exceptions import ValidationError
 import json
 from rest_framework import generics, status, response, permissions
 from django.conf import settings
-
 import os
-
 from ..utils.services import (
     fetch_calendar_data, 
     get_year_data, 
@@ -22,10 +18,10 @@ from ..utils.services import (
     handle_bottom_data,
     handle_top_image,
     process_top_image_with_year,
-      process_calendar_bottom
-    
-)
+      process_calendar_bottom)
 from ..utils.upscaling import upscale_image_with_bigjpg
+
+
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
@@ -485,15 +481,12 @@ class CalendarPrint(generics.CreateAPIView):
             # 6. Obsługa pól (Field1-3 + prefetched)
             all_fields = []
             for i in range(1, 4):
-                print(f"Przetwarzanie pola {i}...")
-                print(f"   Typ treści: {getattr(calendar, f'field{i}_content_type')}")
                 all_fields.append((getattr(calendar, f"field{i}", None), i)) 
             
             for img in getattr(calendar, "prefetched_images_for_fields", []):
                 all_fields.append((img, f"prefetched_image_{img.id}"))
 
             for field_obj, field_name in all_fields:
-                
                 data["fields"][field_name] = handle_field_data(field_obj, field_name, export_dir)
 
 
@@ -516,15 +509,8 @@ class CalendarPrint(generics.CreateAPIView):
             if data["top_image"] and data.get("year"):
                 process_top_image_with_year(upscaled_path, data,)
                 
-
             # 8. Nanoszenie fileds na bottom 
                 process_calendar_bottom(data,upscaled_path)
-
-
-
-            # 9. Sprzątanie katalogu eksportu (jeśli jest pusty lub ma tylko plik JSON)
-            # Zostaw to jako zadanie dla zewnętrznego joba lub zrób to ostrożnie 
-            # (aby nie usunąć JSONa zanim zostanie przetworzony)
 
             return Response({
                 "message": "Dane kalendarza zostały przetworzone, a obraz wgrany do Cloudinary.",

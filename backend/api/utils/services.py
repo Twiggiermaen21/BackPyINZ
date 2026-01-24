@@ -404,51 +404,104 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             pos_y = 0
 
             if config:
-                print(f"🔍 Przetwarzanie konfiguracji dla pola {i}...")
-                print(f"   Surowe dane: {config}")
                 # =========================================================
-                # A. PRZETWARZANIE TEKSTU Z WALIDACJĄ
+                # A. PRZETWARZANIE TEKSTU (STRICT WRAP - STAŁY ROZMIAR)
                 # =========================================================
                 if config.get("text"):
                     text_content = config["text"]
                     
-                    # 1. Walidacja Rozmiaru Czcionki (size)
+                    # 1. Pobranie parametrów (BEZ SKALOWANIA)
                     raw_size = config.get("size", 200)
                     try:
                         f_size = int(float(raw_size))
-                        if f_size < 10:
-                            print(f"⚠️ Ostrzeżenie: Rozmiar czcionki '{f_size}' jest za mały. Ustawiam 200.")
-                            f_size = 200
-                    except (ValueError, TypeError) as e:
-                        print(f"⚠️ Błąd parsowania 'size' dla tekstu. Otrzymano: '{raw_size}'. Błąd: {e}. Używam domyślnego: 200.")
+                        if f_size < 10: f_size = 200
+                    except (ValueError, TypeError):
                         f_size = 200
 
-                    # 2. Kolor (color)
-                    f_color = config.get("color", "#000000") # Pillow zazwyczaj rzuci błędem dopiero przy rysowaniu
-
-                    # 3. Czcionka (font)
+                    f_color = config.get("color", "#000000")
                     f_font_name = config.get("font", "Arial")
                     font_path = get_font_path(f_font_name)
                     
                     try:
                         font = ImageFont.truetype(font_path, f_size)
                         
-                        # Obliczanie wymiarów tekstu
-                        left, top, right, bottom = strip_draw.textbbox((0, 0), text_content, font=font)
-                        text_w, text_h = right - left, bottom - top
+                        # Maksymalna szerokość w jakiej tekst musi się zmieścić
+                        # Odejmujemy mały margines (np. 10px), żeby nie dotykał krawędzi
+                        MAX_WIDTH = W_CONTENT - 20
                         
-                        # Centrowanie na środku paska (0 do W_CONTENT)
-                        text_x = (W_CONTENT - text_w) / 2
-                        text_y = (H_AD_STRIP - text_h) / 2 - top 
+                        # --- ALGORYTM ZAWIJANIA (UCINANIE I PRZENOSZENIE) ---
+                        words = text_content.split()
+                        lines = []
                         
-                        strip_draw.text((text_x, text_y), text_content, font=font, fill=f_color)
-                        print(f"   📝 Narysowano tekst: '{text_content[:20]}...' (Size: {f_size}, Font: {f_font_name})")
+                        if len(words) > 0:
+                            current_line = words[0]
+                            
+                            for word in words[1:]:
+                                # Sprawdzamy: "co by było, gdybyśmy dodali to słowo do tej linii?"
+                                test_line = current_line + " " + word
+                                
+                                # Mierzymy szerokość testowej linii
+                                l, t, r, b = strip_draw.textbbox((0, 0), test_line, font=font)
+                                test_width = r - l
+                                
+                                if test_width <= MAX_WIDTH:
+                                    # Mieści się -> dodajemy słowo
+                                    current_line = test_line
+                                else:
+                                    # NIE mieści się (wychodzi za pole) -> 
+                                    # Zapisujemy obecną linię i to słowo wrzucamy do NOWEJ linii
+                                    lines.append(current_line)
+                                    current_line = word
+                            
+                            # Dodajemy ostatnią linię
+                            lines.append(current_line)
+                        else:
+                            # Pusty tekst
+                            lines = []
+
+                        # --- RYSOWANIE I CENTROWANIE ---
+                        if lines:
+                            # 1. Obliczamy wysokość pojedynczej linii (np. na literach "Ay")
+                            #    dzięki temu odstępy będą równe
+                            _, t_box, _, b_box = strip_draw.textbbox((0, 0), "Ay", font=font)
+                            line_height = b_box - t_box
+                            
+                            # Interlinia (odstęp między wierszami) - np. 1.1x wysokości czcionki
+                            line_spacing = line_height * 1.15
+                            
+                            # Łączna wysokość całego bloku tekstu
+                            total_block_height = (len(lines) * line_spacing) - (line_spacing - line_height) 
+                            # (odejmujemy nadmiar interlinii z ostatniego wiersza dla precyzji)
+
+                            # 2. Obliczamy punkt startowy Y (Centrowanie Pionowe)
+                            # (Wysokość Pola - Wysokość Tekstu) / 2
+                            start_y = (H_AD_STRIP - total_block_height) / 2
+                            
+                            # Korekta o górny margines fontu (żeby optycznie było idealnie na środku)
+                            start_y -= t_box
+
+                            current_y = start_y
+
+                            # 3. Pętla rysująca linie
+                            for line in lines:
+                                # Mierzymy szerokość tej konkretnej linii
+                                l, t, r, b = strip_draw.textbbox((0, 0), line, font=font)
+                                line_width = r - l
+                                
+                                # Centrowanie Poziome: (Szerokość Pola - Szerokość Linii) / 2
+                                center_x = (W_CONTENT - line_width) / 2
+                                
+                                strip_draw.text((center_x, current_y), line, font=font, fill=f_color)
+                                
+                                # Przesunięcie w dół do następnej linii
+                                current_y += line_spacing
+
+                            print(f"   📝 Tekst: {len(lines)} linii. Rozmiar: {f_size}. Wycentrowano.")
 
                     except OSError:
-                        print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}. Tekst nie zostanie narysowany.")
+                        print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}.")
                     except Exception as e:
                         print(f"❌ Nieoczekiwany błąd podczas rysowania tekstu: {e}")
-
                 # =========================================================
                 # B. WALIDACJA PARAMETRÓW POZYCYJNYCH (DLA OBRAZKÓW)
                 # =========================================================
