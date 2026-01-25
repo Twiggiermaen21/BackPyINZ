@@ -255,7 +255,7 @@ class BottomColorSerializer(serializers.ModelSerializer):
 class BottomGradientSerializer(serializers.ModelSerializer):
     class Meta:
         model = BottomGradient
-        fields = ["id", "created_at", "author", "start_color", "end_color", "direction", "strength", "theme"]
+        fields = ["id", "created_at", "author", "start_color", "end_color", "direction",  "theme"]
         read_only_fields = ["id", "created_at", "author"]
 
 
