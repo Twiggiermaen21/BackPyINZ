@@ -267,6 +267,10 @@ def process_top_image_with_year(top_image_path, data):
         print(f"❌ Krytyczny błąd w process_top_image_with_year: {e}")
         return None, top_image_path
 
+import os
+import requests
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
@@ -291,11 +295,8 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         H_AD_STRIP = 768      
         MARGIN_Y = 25 
         
-        # --- NOWA MATEMATYKA (PADDING Z OBU STRON) ---
-        PADDING_X = 112  # Padding z lewej i prawej
-        
-        # Szerokość robocza = Całość - (2 * Padding)
-        # 3661 - 224 = 3437 px
+        # --- PADDING ---
+        PADDING_X = 112
         W_CONTENT = CANVAS_WIDTH - (2 * PADDING_X) 
         
         H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
@@ -318,7 +319,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         # KROK A: GŁÓWKA
         # =========================================================
         if upscaled_top_path:
-            header_img = load_image_robust(upscaled_top_path)
+            header_img = load_image_robust(upscaled_top_path) 
             if header_img:
                 header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
                 base_img.paste(header_fitted, (0, 0))
@@ -334,7 +335,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 y_color = year_data.get("color", "#d40808")
                 y_font_name = year_data.get("font", "Arial")
                 
-                font_path = get_font_path(y_font_name)
+                font_path = get_font_path(y_font_name) 
                 font = ImageFont.truetype(font_path, y_size)
                 draw.text((y_posX, y_posY), y_text, font=font, fill=y_color)
             except Exception:
@@ -347,15 +348,11 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         
         for i in range(1, 4):
             prev_h = (i - 1) * H_SEGMENT
-            
-            # Y startowe na głównym płótnie
             box_start_y = H_HEADER + prev_h + MARGIN_Y
             strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
             
-            # 1. RYSOWANIE KALENDARIUM (BOX)
-            # Rysujemy boxa również z uwzględnieniem paddingu, żeby pasował do reklam
+            # 1. KALENDARIUM
             try:
-                # Box zaczyna się na 112px i ma szerokość 3437px
                 box_coords = [(PADDING_X, box_start_y), (PADDING_X + W_CONTENT, box_start_y + H_MONTH_BOX)]
                 draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
                 
@@ -364,18 +361,14 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 m_font = ImageFont.truetype(m_font_path, 150)
                 m_color = "#1d4ed8"
                 
-                # Centrowanie tekstu wewnątrz pola roboczego
                 left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
                 m_w = right - left
-                
-                # Środek pola roboczego to: PADDING_X + (W_CONTENT / 2)
                 center_x = PADDING_X + (W_CONTENT / 2)
                 m_x = center_x - (m_w / 2)
                 m_y = box_start_y + 40 
                 
                 draw.text((m_x, m_y), month_name, font=m_font, fill=m_color)
                 
-                # Siatka dni
                 g_text = "[Siatka dni]"
                 g_font = ImageFont.truetype(m_font_path, 100)
                 gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
@@ -388,62 +381,79 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 print(f"⚠️ Błąd rysowania kalendarium {i}: {e}")
 
             # ---------------------------------------------------------
-            # 2. PASEK REKLAMOWY (OVERFLOW HIDDEN Z OBU STRON)
+            # 2. PASEK REKLAMOWY
             # ---------------------------------------------------------
-            
-            # Tworzymy tymczasowy obrazek o szerokości DOKŁADNIE obszaru roboczego (3437px)
-            # Wszystko co wystaje poza wymiar (0 do 3437) na tym obrazku, zniknie.
             strip_img = Image.new("RGBA", (W_CONTENT, H_AD_STRIP), (255, 255, 255, 0))
             strip_draw = ImageDraw.Draw(strip_img)
            
             config = raw_fields.get(str(i)) or raw_fields.get(i)
             
-            # Wartości domyślne (zostaną nadpisane jeśli parsowanie się uda)
             scale = 1.0
             pos_x = 0
             pos_y = 0
 
             if config:
-             # =========================================================
-                # A. PRZETWARZANIE TEKSTU (HARD WRAP + CENTROWANIE X/Y + WEIGHT)
+                raw_scale = config.get("size")
+                if raw_scale is not None:
+                    try: scale = float(raw_scale)
+                    except: scale = 1.0
+
+                raw_pos_x = config.get("positionX")
+                if raw_pos_x is not None:
+                    try: pos_x = int(float(raw_pos_x))
+                    except: pos_x = 0
+
+                raw_pos_y = config.get("positionY")
+                if raw_pos_y is not None:
+                    try: pos_y = int(float(raw_pos_y))
+                    except: pos_y = 0
+                
+                print(f"   ⚙️ [Pasek {i}] Obrazki: Skala={scale}, X={pos_x}, Y={pos_y}")
+
+                # =========================================================
+                # A. PRZETWARZANIE TEKSTU (SYMULACJA BOLD - PROPORCJA 1/60)
                 # =========================================================
                 if config.get("text"):
                     text_content = config["text"]
                     
-                    # 1. Konfiguracja parametrów
                     raw_size = config.get("size", 200)
                     try:
                         f_size = int(float(raw_size))
                         if f_size < 10: f_size = 200
-                    except (ValueError, TypeError):
-                        f_size = 200
+                    except: f_size = 200
 
-                    # --- DODANO NOWY PARAMETR ---
-                    f_weight = config.get("weight", "normal")  # Nie używane w tej wersji
-                    
                     f_color = config.get("color", "#000000")
                     f_font_name = config.get("font", "Arial")
                     font_path = get_font_path(f_font_name)
                     
+                    # --- KONFIGURACJA POGRUBIENIA (DELIKATNY BOLD) ---
+                    raw_weight = config.get("weight", "normal")
+                    if raw_weight == "bold":
+                        # Dzielimy przez 60, żeby bold był subtelny, a nie "napuchnięty"
+                        bold_stroke = int(f_size / 60)
+                        if bold_stroke < 1: bold_stroke = 1
+                    else:
+                        bold_stroke = 0
+                    
                     try:
                         font = ImageFont.truetype(font_path, f_size)
                         
-                        # Marginesy i Limity
                         INTERNAL_MARGIN = 10 
                         MAX_WIDTH_LIMIT = W_CONTENT - (INTERNAL_MARGIN * 2)
                         
-                        print(f"\n--- ANALIZA TEKSTU: '{text_content[:30]}...' (Waga: {f_weight}) ---")
+                        print(f"   📝 [Pasek {i}] Tekst: '{text_content[:20]}...' (Waga: {raw_weight}, Stroke: {bold_stroke})")
 
-                        # --- ALGORYTM ZAWIJANIA (HARD WRAP) ---
+                        # --- ALGORYTM ZAWIJANIA ---
                         words = text_content.split()
                         lines = []
                         current_line = ""
 
                         for word in words:
-                            l, t, r, b = strip_draw.textbbox((0, 0), word, font=font)
+                            # WAŻNE: Tu też uwzględniamy bold_stroke
+                            l, t, r, b = strip_draw.textbbox((0, 0), word, font=font, stroke_width=bold_stroke)
                             word_width = r - l
 
-                            # A. Słowo gigant (Hard Wrap)
+                            # 1. Słowo gigant (Hard Wrap)
                             if word_width > MAX_WIDTH_LIMIT:
                                 if current_line:
                                     lines.append(current_line)
@@ -452,7 +462,8 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                                 part = ""
                                 for char in word:
                                     test_part = part + char
-                                    l, t, r, b = strip_draw.textbbox((0, 0), test_part, font=font)
+                                    # POPRAWKA: Dodano stroke_width=bold_stroke w tej linii poniżej!
+                                    l, t, r, b = strip_draw.textbbox((0, 0), test_part, font=font, stroke_width=bold_stroke)
                                     if (r - l) <= MAX_WIDTH_LIMIT:
                                         part = test_part
                                     else:
@@ -460,10 +471,10 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                                         part = char
                                 current_line = part
                             
-                            # B. Słowo normalne
+                            # 2. Słowo normalne
                             else:
                                 test_line = (current_line + " " + word).strip()
-                                l, t, r, b = strip_draw.textbbox((0, 0), test_line, font=font)
+                                l, t, r, b = strip_draw.textbbox((0, 0), test_line, font=font, stroke_width=bold_stroke)
                                 line_width = r - l
                                 
                                 if line_width <= MAX_WIDTH_LIMIT:
@@ -475,78 +486,48 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                         if current_line:
                             lines.append(current_line)
 
-                        # --- RYSOWANIE (CENTROWANIE X i Y) ---
+                        # --- RYSOWANIE ---
                         if lines:
-                            # 1. Obliczenia dla pionu (Y)
-                            _, t_box, _, b_box = strip_draw.textbbox((0, 0), "Ay", font=font)
+                            _, t_box, _, b_box = strip_draw.textbbox((0, 0), "Ay", font=font, stroke_width=bold_stroke)
                             line_height = b_box - t_box
                             line_spacing = line_height * 1.15
                             total_block_height = (len(lines) * line_spacing) - (line_spacing - line_height) 
                             
                             start_y = (H_AD_STRIP - total_block_height) / 2
                             start_y -= t_box
-
                             current_y = start_y
                             max_text_width = 0
 
                             for line in lines:
-                                # 2. Obliczenia dla poziomu (X) - CENTROWANIE
-                                l, t, r, b = strip_draw.textbbox((0, 0), line, font=font)
+                                l, t, r, b = strip_draw.textbbox((0, 0), line, font=font, stroke_width=bold_stroke)
                                 current_line_width = r - l
                                 
-                                # Wyśrodkowanie w obszarze roboczym (uwzględniając Padding)
                                 center_x = (W_CONTENT - current_line_width) / 2
                                 
-                                strip_draw.text((center_x, current_y), line, font=font, fill=f_color)
+                                strip_draw.text(
+                                    (center_x, current_y), 
+                                    line, 
+                                    font=font, 
+                                    fill=f_color,
+                                    stroke_width=bold_stroke,
+                                    stroke_fill=f_color
+                                )
                                 
                                 if current_line_width > max_text_width:
                                     max_text_width = current_line_width
                                 
                                 current_y += line_spacing
 
-                            print(f"    ✅ Zakończono. Linii: {len(lines)}. Max szerokość: {max_text_width} px. Wycentrowano X/Y.\n")
+                            print(f"      ✅ Rysowanie: {len(lines)} linii. Max szer: {max_text_width}px.")
 
                     except OSError:
                         print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}.")
                     except Exception as e:
-                        print(f"❌ Nieoczekiwany błąd: {e}")
-                # =========================================================
-                # B. WALIDACJA PARAMETRÓW POZYCYJNYCH (DLA OBRAZKÓW)
-                # =========================================================
-                # Te zmienne (scale, pos_x, pos_y) zostaną użyte w pętli obrazków poniżej
-                
-                # 1. Skala (size) - w kontekście obrazka to mnożnik
-                raw_scale = config.get("size")
-                if raw_scale is not None:
-                    try:
-                        scale = float(raw_scale)
-                    except (ValueError, TypeError) as e:
-                        print(f"⚠️ Błąd parsowania 'size' (skala obrazka). Otrzymano: '{raw_scale}'. Błąd: {e}. Używam domyślnego: 1.0.")
-                        scale = 1.0
+                        print(f"❌ Nieoczekiwany błąd tekstu: {e}")
 
-                # 2. Pozycja X (positionX)
-                raw_pos_x = config.get("positionX")
-                if raw_pos_x is not None:
-                    try:
-                        pos_x = int(float(raw_pos_x))
-                    except (ValueError, TypeError) as e:
-                        print(f"⚠️ Błąd parsowania 'positionX'. Otrzymano: '{raw_pos_x}'. Błąd: {e}. Używam domyślnego: 0.")
-                        pos_x = 0
-
-                # 3. Pozycja Y (positionY)
-                raw_pos_y = config.get("positionY")
-                if raw_pos_y is not None:
-                    try:
-                        pos_y = int(float(raw_pos_y))
-                    except (ValueError, TypeError) as e:
-                        print(f"⚠️ Błąd parsowania 'positionY'. Otrzymano: '{raw_pos_y}'. Błąd: {e}. Używam domyślnego: 0.")
-                        pos_y = 0
-
-                print(f"   ⚙️ Ustawienia obrazków: Skala={scale}, X={pos_x}, Y={pos_y}")
-
-          
-
-            # B. Obrazki
+            # =========================================================
+            # C. OBRAZKI DODATKOWE
+            # =========================================================
             for key, val in raw_fields.items():
                 if not isinstance(val, dict): continue
                 if val.get("field_number") == i and val.get("image_url"):
@@ -561,19 +542,13 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                             if new_h <= 0: new_h = 1
                             
                             overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                            
-                            # Wklejamy na warstwę paska.
-                            # Jeśli użytkownik ustawił positionX na -50, zdjęcie zostanie ucięte z lewej.
-                            # Jeśli ustawił positionX na 3400 (przy szerokości zdjęcia 200), zostanie ucięte z prawej.
                             strip_img.paste(overlay, (pos_x, pos_y), overlay)
+                            print(f"      🖼️ Wklejono obrazek: {img_url}")
                             
                         except Exception as e:
                             print(f"⚠️ Błąd wklejania obrazka: {e}")
 
-            # ---------------------------------------------------------
-            # FINALIZACJA: WKLEJENIE NA TŁO
-            # ---------------------------------------------------------
-            # Wklejamy gotowy pasek w punkcie (112, Y)
+            # FINALIZACJA
             base_img.paste(strip_img, (PADDING_X, strip_start_y), strip_img)
 
 
@@ -588,4 +563,3 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         import traceback
         traceback.print_exc()
         return None
-   
