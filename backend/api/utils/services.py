@@ -404,13 +404,13 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             pos_y = 0
 
             if config:
-                # =========================================================
-                # A. PRZETWARZANIE TEKSTU (STRICT WRAP - STAŁY ROZMIAR)
+             # =========================================================
+                # A. PRZETWARZANIE TEKSTU (HARD WRAP + CENTROWANIE X/Y + WEIGHT)
                 # =========================================================
                 if config.get("text"):
                     text_content = config["text"]
                     
-                    # 1. Pobranie parametrów (BEZ SKALOWANIA)
+                    # 1. Konfiguracja parametrów
                     raw_size = config.get("size", 200)
                     try:
                         f_size = int(float(raw_size))
@@ -418,6 +418,9 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                     except (ValueError, TypeError):
                         f_size = 200
 
+                    # --- DODANO NOWY PARAMETR ---
+                    f_weight = config.get("weight", "normal")  # Nie używane w tej wersji
+                    
                     f_color = config.get("color", "#000000")
                     f_font_name = config.get("font", "Arial")
                     font_path = get_font_path(f_font_name)
@@ -425,83 +428,88 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                     try:
                         font = ImageFont.truetype(font_path, f_size)
                         
-                        # Maksymalna szerokość w jakiej tekst musi się zmieścić
-                        # Odejmujemy mały margines (np. 10px), żeby nie dotykał krawędzi
-                        MAX_WIDTH = W_CONTENT - 20
+                        # Marginesy i Limity
+                        INTERNAL_MARGIN = 10 
+                        MAX_WIDTH_LIMIT = W_CONTENT - (INTERNAL_MARGIN * 2)
                         
-                        # --- ALGORYTM ZAWIJANIA (UCINANIE I PRZENOSZENIE) ---
+                        print(f"\n--- ANALIZA TEKSTU: '{text_content[:30]}...' (Waga: {f_weight}) ---")
+
+                        # --- ALGORYTM ZAWIJANIA (HARD WRAP) ---
                         words = text_content.split()
                         lines = []
-                        
-                        if len(words) > 0:
-                            current_line = words[0]
+                        current_line = ""
+
+                        for word in words:
+                            l, t, r, b = strip_draw.textbbox((0, 0), word, font=font)
+                            word_width = r - l
+
+                            # A. Słowo gigant (Hard Wrap)
+                            if word_width > MAX_WIDTH_LIMIT:
+                                if current_line:
+                                    lines.append(current_line)
+                                    current_line = ""
+                                
+                                part = ""
+                                for char in word:
+                                    test_part = part + char
+                                    l, t, r, b = strip_draw.textbbox((0, 0), test_part, font=font)
+                                    if (r - l) <= MAX_WIDTH_LIMIT:
+                                        part = test_part
+                                    else:
+                                        lines.append(part)
+                                        part = char
+                                current_line = part
                             
-                            for word in words[1:]:
-                                # Sprawdzamy: "co by było, gdybyśmy dodali to słowo do tej linii?"
-                                test_line = current_line + " " + word
-                                
-                                # Mierzymy szerokość testowej linii
+                            # B. Słowo normalne
+                            else:
+                                test_line = (current_line + " " + word).strip()
                                 l, t, r, b = strip_draw.textbbox((0, 0), test_line, font=font)
-                                test_width = r - l
+                                line_width = r - l
                                 
-                                if test_width <= MAX_WIDTH:
-                                    # Mieści się -> dodajemy słowo
+                                if line_width <= MAX_WIDTH_LIMIT:
                                     current_line = test_line
                                 else:
-                                    # NIE mieści się (wychodzi za pole) -> 
-                                    # Zapisujemy obecną linię i to słowo wrzucamy do NOWEJ linii
                                     lines.append(current_line)
                                     current_line = word
-                            
-                            # Dodajemy ostatnią linię
-                            lines.append(current_line)
-                        else:
-                            # Pusty tekst
-                            lines = []
 
-                        # --- RYSOWANIE I CENTROWANIE ---
+                        if current_line:
+                            lines.append(current_line)
+
+                        # --- RYSOWANIE (CENTROWANIE X i Y) ---
                         if lines:
-                            # 1. Obliczamy wysokość pojedynczej linii (np. na literach "Ay")
-                            #    dzięki temu odstępy będą równe
+                            # 1. Obliczenia dla pionu (Y)
                             _, t_box, _, b_box = strip_draw.textbbox((0, 0), "Ay", font=font)
                             line_height = b_box - t_box
-                            
-                            # Interlinia (odstęp między wierszami) - np. 1.1x wysokości czcionki
                             line_spacing = line_height * 1.15
-                            
-                            # Łączna wysokość całego bloku tekstu
                             total_block_height = (len(lines) * line_spacing) - (line_spacing - line_height) 
-                            # (odejmujemy nadmiar interlinii z ostatniego wiersza dla precyzji)
-
-                            # 2. Obliczamy punkt startowy Y (Centrowanie Pionowe)
-                            # (Wysokość Pola - Wysokość Tekstu) / 2
-                            start_y = (H_AD_STRIP - total_block_height) / 2
                             
-                            # Korekta o górny margines fontu (żeby optycznie było idealnie na środku)
+                            start_y = (H_AD_STRIP - total_block_height) / 2
                             start_y -= t_box
 
                             current_y = start_y
+                            max_text_width = 0
 
-                            # 3. Pętla rysująca linie
                             for line in lines:
-                                # Mierzymy szerokość tej konkretnej linii
+                                # 2. Obliczenia dla poziomu (X) - CENTROWANIE
                                 l, t, r, b = strip_draw.textbbox((0, 0), line, font=font)
-                                line_width = r - l
+                                current_line_width = r - l
                                 
-                                # Centrowanie Poziome: (Szerokość Pola - Szerokość Linii) / 2
-                                center_x = (W_CONTENT - line_width) / 2
+                                # Wyśrodkowanie w obszarze roboczym (uwzględniając Padding)
+                                center_x = (W_CONTENT - current_line_width) / 2
                                 
                                 strip_draw.text((center_x, current_y), line, font=font, fill=f_color)
                                 
-                                # Przesunięcie w dół do następnej linii
+                                if current_line_width > max_text_width:
+                                    max_text_width = current_line_width
+                                
                                 current_y += line_spacing
 
-                            print(f"   📝 Tekst: {len(lines)} linii. Rozmiar: {f_size}. Wycentrowano.")
+                            print(f"    ✅ Zakończono. Linii: {len(lines)}. Max szerokość: {max_text_width} px. Wycentrowano X/Y.\n")
 
                     except OSError:
                         print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}.")
                     except Exception as e:
-                        print(f"❌ Nieoczekiwany błąd podczas rysowania tekstu: {e}")
+                        print(f"❌ Nieoczekiwany błąd: {e}")
                 # =========================================================
                 # B. WALIDACJA PARAMETRÓW POZYCYJNYCH (DLA OBRAZKÓW)
                 # =========================================================
