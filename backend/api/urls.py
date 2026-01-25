@@ -1,5 +1,4 @@
 from django.urls import path
-
 from .views.metadata_views import *
 from .views.profile_views import *
 from .views.calendar_views import *
@@ -62,7 +61,4 @@ path("images-by-project/<str:project_name>/", ImagesByProjectView.as_view()),
 
     path('styl_narracyjny/', StylNarracyjnyCreate.as_view(), name='styl-narracyjny-list'),
     path('styl_narracyjny/<int:pk>/', StylNarracyjnyDetail.as_view(), name='styl-narracyjny-detail'),
-
-
-
 ]

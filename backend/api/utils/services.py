@@ -104,78 +104,250 @@ def handle_top_image(calendar, export_dir):
             print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
             
     return gen_img.url
+from PIL import Image, ImageDraw, ImageChops
+import math
+import os
+
+# =========================================================
+# 🛠️ FUNKCJE POMOCNICZE (Odwzorowanie CSS w PIL)
+# =========================================================
+
+def hex_to_rgb(hex_color):
+    """Zamienia hex string na tuple RGB."""
+    if not isinstance(hex_color, str): return (255, 255, 255)
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 6:
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    return (255, 255, 255)
+
+def interpolate_color(start_rgb, end_rgb, t):
+    """Miesza dwa kolory w proporcji t (0.0 - 1.0)."""
+    return tuple(int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * t) for i in range(3))
+
+def create_gradient_vertical(size, start_rgb, end_rgb):
+    """Szybki gradient pionowy (resize 1px)."""
+    width, height = size
+    # Generujemy pasek o wysokości 256px dla płynności
+    gradient_h = 256
+    base = Image.new('RGB', (1, gradient_h))
+    pixels = base.load()
+    
+    for y in range(gradient_h):
+        t = y / (gradient_h - 1)
+        # Opcjonalnie: t = math.pow(t, 0.8) # można zmienić krzywą, żeby kolor startowy był "większy"
+        pixels[0, y] = interpolate_color(start_rgb, end_rgb, t)
+        
+    # Skalujemy do docelowego rozmiaru
+    return base.resize((width, height), Image.Resampling.BICUBIC)
+
+def create_radial_gradient_css(size, start_rgb, end_rgb, center=(0.5, 0.5)):
+    """Gradient radialny (Circle)."""
+    width, height = size
+    # Optymalizacja: Generujemy na mniejszym obrazku i skalujemy
+    small_w, small_h = 400, int(400 * (height/width))
+    base = Image.new('RGB', (small_w, small_h))
+    pixels = base.load()
+    
+    cx, cy = int(small_w * center[0]), int(small_h * center[1])
+    # Promień krycia (do najdalszego rogu)
+    max_dist = math.sqrt(max(cx, small_w-cx)**2 + max(cy, small_h-cy)**2)
+    
+    for y in range(small_h):
+        for x in range(small_w):
+            dist = math.sqrt((x - cx)**2 + (y - cy)**2)
+            t = min(dist / max_dist, 1.0)
+            pixels[x, y] = interpolate_color(start_rgb, end_rgb, t)
+            
+    return base.resize((width, height), Image.Resampling.LANCZOS)
+
+def create_waves_css(size, start_rgb, end_rgb):
+    """
+    Symulacja CSS: repeating-linear-gradient(135deg, A, B 20%, A 40%)
+    """
+    w, h = size
+    # Aby obrócić obraz bez ucinania rogów, tworzymy większy kwadrat (przekątna)
+    diagonal = int(math.sqrt(w**2 + h**2))
+    canvas_size = diagonal + 100
+    
+    # Tworzymy jeden cykl gradientu (A -> B -> A)
+    # W CSS cykl to 40%. Przyjmijmy, że 40% odnosi się do przekątnej.
+    cycle_height = int(canvas_size * 0.40) 
+    if cycle_height < 100: cycle_height = 100
+    
+    # Pasek gradientu: A (0%) -> B (50% paska czyli 20% całości) -> A (100% paska czyli 40% całości)
+    strip_h = 256
+    strip = Image.new('RGB', (1, strip_h))
+    px = strip.load()
+    for y in range(strip_h):
+        t = y / (strip_h - 1)
+        if t < 0.5:
+            # Pierwsza połowa: A -> B
+            local_t = t * 2 
+            px[0, y] = interpolate_color(start_rgb, end_rgb, local_t)
+        else:
+            # Druga połowa: B -> A
+            local_t = (t - 0.5) * 2
+            px[0, y] = interpolate_color(end_rgb, start_rgb, local_t)
+            
+    cycle_img = strip.resize((canvas_size, cycle_height), Image.Resampling.BICUBIC)
+    
+    # Powielamy cykl w pionie, aby wypełnić całe duże płótno
+    repeats = (canvas_size // cycle_height) + 2
+    full_pattern = Image.new('RGB', (canvas_size, cycle_height * repeats))
+    for i in range(repeats):
+        full_pattern.paste(cycle_img, (0, i * cycle_height))
+        
+    # Obracamy o -45 stopni (co daje 135deg w układzie CSS Top-Left)
+    # W PIL rotate jest counter-clockwise, więc 45 to przeciwnie do wskazówek zegara.
+    # CSS 135deg to po skosie w dół w prawo.
+    # Żeby uzyskać pasy idące z lewy-góra na prawy-dół, musimy mieć pasy poziome i obrócić.
+    # Tutaj mamy pasy poziome.
+    rotated = full_pattern.rotate(0, resample=Image.Resampling.BICUBIC, expand=False)
+    
+    # Wycinamy środek o wymiarach docelowych
+    center_x, center_y = rotated.width // 2, rotated.height // 2
+    left = center_x - w // 2
+    top = center_y - h // 2
+    
+    return rotated.crop((left, top, left + w, top + h))
+
+def create_liquid_css(size, start_rgb, end_rgb):
+    """
+    Symulacja CSS: linear-gradient(135deg, A 0%, B 100%)
+    """
+    w, h = size
+    diagonal = int(math.sqrt(w**2 + h**2))
+    
+    # Tworzymy pionowy gradient (A -> B) o długości przekątnej
+    grad = create_gradient_vertical((diagonal, diagonal), start_rgb, end_rgb)
+    
+    # Obracamy o -45 (dla 135deg)
+    rotated = grad.rotate(-45, resample=Image.Resampling.BICUBIC)
+    
+    center_x, center_y = rotated.width // 2, rotated.height // 2
+    left = center_x - w // 2
+    top = center_y - h // 2
+    return rotated.crop((left, top, left + w, top + h))
+
+
+# =========================================================
+# 🏭 GENERATOR TŁA
+# =========================================================
+
+def generate_bottom_bg_image(width, height, bg_color, end_color, theme, variant):
+    rgb_start = hex_to_rgb(bg_color)
+    rgb_end = hex_to_rgb(end_color)
+
+    # === 1. MOTYWY SPECJALNE (Aurora, Liquid, Waves) ===
+    
+    if theme == "aurora":
+        # CSS: radial-gradient(circle at 30% 30%, start, end, start)
+        # Uproszczenie: Radial Start->End. Aby "Start" był na zewnątrz też, trzebaby complex gradient.
+        # W CSS: start (0%) -> end (do pewnego momentu) -> start (100%).
+        # Zróbmy klasyczny radial z przesuniętym środkiem.
+        return create_radial_gradient_css((width, height), rgb_start, rgb_end, center=(0.3, 0.3))
+        
+    elif theme == "liquid":
+        # CSS: linear-gradient(135deg, start 0%, end 100%)
+        return create_liquid_css((width, height), rgb_start, rgb_end)
+        
+    elif theme == "waves":
+        # CSS: repeating-linear-gradient(135deg, start, end 20%, start 40%)
+        return create_waves_css((width, height), rgb_start, rgb_end)
+        
+    # === 2. VARIANTY KLASYCZNE (Classic) ===
+    # Obsługa: vertical, horizontal, radial, diagonal
+    
+    else:
+        if variant == "horizontal":
+            # Generujemy pionowy mały i obracamy o 90
+            grad = create_gradient_vertical((height, width), rgb_start, rgb_end)
+            return grad.rotate(90, expand=True)
+            
+        elif variant == "radial":
+            return create_radial_gradient_css((width, height), rgb_start, rgb_end, center=(0.5, 0.5))
+            
+        elif variant == "diagonal":
+            # To samo co Liquid (135deg) lub standardowy linear bottom-right
+            return create_liquid_css((width, height), rgb_start, rgb_end)
+            
+        else: 
+            # Domyślnie: Vertical (to bottom)
+            # Tutaj user prosił: "kolor początkowy musi być większy".
+            # create_gradient_vertical robi liniowe przejście.
+            # Jeśli start ma dominować, w 'create_gradient_vertical' można zmienić funkcję t.
+            return create_gradient_vertical((width, height), rgb_start, rgb_end)
+
+
+# =========================================================
+# 🚀 GŁÓWNA FUNKCJA (handle_bottom_data)
+# =========================================================
 
 def handle_bottom_data(bottom_obj, export_dir):
     """
-    Obsługuje dane dla sekcji 'bottom' (obraz, kolor, gradient). 
-    Tworzy obrazy dla kolorów/gradientów i wgrywa do Cloudinary.
+    Generuje obraz tła dla sekcji bottom (tylko dolna część kalendarza).
     """
     if not bottom_obj:
         return None
 
-    # ================= OBRAZ =================
-    if isinstance(bottom_obj, BottomImage) and bottom_obj.image:
+    # Stałe wymiary "Plecków" (dolnej sekcji)
+    width, height = 3732, 7559  # Zgodnie z Twoją prośbą (dół)
+    
+    # Jeśli export_dir nie istnieje, utwórz go
+    os.makedirs(export_dir, exist_ok=True)
+    filename = os.path.join(export_dir, "bottom.png")
+    
+    generated_img = None
+    return_data = {}
+
+    # --- A. OBRAZ (BottomImage) ---
+    if hasattr(bottom_obj, 'image') and bottom_obj.image:
         image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
         if image_url:
-            # W tym miejscu oryginalny kod pobierał obraz i zapisywał, 
-            # ale dla BottomImages, które są już w systemie, 
-            # możemy po prostu zwrócić URL, a renderowanie niech pobiera.
-            # Jeśli musisz koniecznie pobrać, użyj logiki z handle_field_data
-            return {"type": "image", "url": image_url}
+            return {"type": "image", "url": image_url, "image_path": None} 
 
-    # ================= KOLOR/GRADIENT (GENEROWANIE OBRAZÓW) =================
-    elif isinstance(bottom_obj, (BottomColor, BottomGradient)):
+    # --- B. KOLOR JEDNOLITY (BottomColor) ---
+    elif hasattr(bottom_obj, 'color') and not hasattr(bottom_obj, 'start_color'):
+        rgb = hex_to_rgb(bottom_obj.color)
+        generated_img = Image.new("RGB", (width, height), rgb)
+        return_data = {"type": "color", "color": bottom_obj.color}
+
+    # --- C. GRADIENT (BottomGradient) ---
+    elif hasattr(bottom_obj, 'start_color'):
+        theme = getattr(bottom_obj, 'theme', 'classic')
+        direction = getattr(bottom_obj, 'direction', 'to bottom')
         
-        width, height = 3732, 10181 # Stałe wymiary
-
-        if isinstance(bottom_obj, BottomColor):
-            filename = os.path.join(export_dir, "bottom.png")
-            img = Image.new("RGB", (width, height), bottom_obj.color)
-            return_data = {"type": "color", "color": bottom_obj.color}
-
-        elif isinstance(bottom_obj, BottomGradient):
-            filename = os.path.join(export_dir, "bottom.png")
-            start_rgb = hex_to_rgb(bottom_obj.start_color)
-            end_rgb = hex_to_rgb(bottom_obj.end_color)
-
-            img = Image.new("RGB", (width, height))
-            pixels = img.load()
-
-            if bottom_obj.direction == "to right":
-                for x in range(width):
-                    ratio = x / width
-                    r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
-                    g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
-                    b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
-                    for y in range(height):
-                        pixels[x, y] = (r, g, b)
-            else:  # to bottom
-                for y in range(height):
-                    ratio = y / height
-                    r = int(start_rgb[0] * (1 - ratio) + end_rgb[0] * ratio)
-                    g = int(start_rgb[1] * (1 - ratio) + end_rgb[1] * ratio)
-                    b = int(start_rgb[2] * (1 - ratio) + end_rgb[2] * ratio)
-                    for x in range(width):
-                        pixels[x, y] = (r, g, b)
-            
-            return_data = {
-                "type": "gradient",
-                "start_color": bottom_obj.start_color,
-                "end_color": bottom_obj.end_color,
-                "direction": bottom_obj.direction,
-                "theme": bottom_obj.theme,
-                "css": get_gradient_css(bottom_obj.start_color, bottom_obj.end_color, bottom_obj.direction),
-            }
+        # Mapowanie kierunków z bazy na warianty
+        variant = "vertical"
+        if direction == "to right": variant = "horizontal"
+        elif direction == "to bottom right": variant = "diagonal"
+        elif direction == "radial": variant = "radial"
         
-        # Zapisz obraz lokalnie
-        img.save(filename)
+        print(f"🎨 Generowanie tła: Theme={theme}, Variant={variant}, Size={width}x{height}")
         
-        # POPRAWKA: Najpierw aktualizujemy, potem zwracamy słownik
-        return_data["image_path"] = filename  # Lub: return_data.update({"image_path": filename})
-        return return_data  # Zwracamy obiekt, a nie wynik metody update()
+        generated_img = generate_bottom_bg_image(
+            width, height, 
+            bottom_obj.start_color, 
+            bottom_obj.end_color, 
+            theme, 
+            variant
+        )
         
+        return_data = {
+            "type": "gradient",
+            "start_color": bottom_obj.start_color,
+            "end_color": bottom_obj.end_color,
+            "theme": theme,
+            "image_path": filename
+        }
+
+    # Zapis
+    if generated_img:
+        generated_img.save(filename, quality=95)
+        return_data["image_path"] = filename
+        return return_data
+
     return None
-
 
 # Upewnij się, że masz zaimportowaną funkcję pomocniczą
 # from utils import get_font_path (zależnie gdzie ją trzymasz)
