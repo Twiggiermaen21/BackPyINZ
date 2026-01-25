@@ -506,11 +506,11 @@ class CalendarPrint(generics.CreateAPIView):
                 result = upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
                 data["bottom"]["image_path"] = result["local_upscaled"]
             # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
-            if data["top_image"] and data.get("year"):
-                process_top_image_with_year(upscaled_path, data,)
+            if data["top_image"] and data.get("year") is not None:
+                process_top_image_with_year(upscaled_path, data)
                 
             # 8. Nanoszenie fileds na bottom 
-                process_calendar_bottom(data,upscaled_path)
+            process_calendar_bottom(data,upscaled_path)
 
             return Response({
                 "message": "Dane kalendarza zostały przetworzone, a obraz wgrany do Cloudinary.",
