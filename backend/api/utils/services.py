@@ -163,7 +163,6 @@ def handle_bottom_data(bottom_obj, export_dir):
                 "start_color": bottom_obj.start_color,
                 "end_color": bottom_obj.end_color,
                 "direction": bottom_obj.direction,
-                "strength": bottom_obj.strength,
                 "theme": bottom_obj.theme,
                 "css": get_gradient_css(bottom_obj.start_color, bottom_obj.end_color, bottom_obj.direction),
             }
