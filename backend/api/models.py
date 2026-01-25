@@ -184,35 +184,81 @@ class Upscaling(models.Model):
 
     def __str__(self):
         return f"Upscaling {self.id} - {self.output_file or 'pending'}"
+
+from django.db import models
+
 class StylArtystyczny(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Kompozycja(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Kolorystyka(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Atmosfera(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Inspiracja(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Tlo(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Perspektywa(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Detale(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class Realizm(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class StylNarracyjny(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['id']
+
 class CalendarType(models.Model):
     nazwa = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ['id']

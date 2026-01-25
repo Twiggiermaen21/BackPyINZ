@@ -1,5 +1,4 @@
 import os
-from PIL import Image
 from bigjpg import Bigjpg, Styles, Noises, EnlargeValues
 
 def upscale_image_with_bigjpg(image_url,export_dir):
@@ -12,8 +11,6 @@ def upscale_image_with_bigjpg(image_url,export_dir):
         enlarge_value=EnlargeValues._4x,
         image_url=image_url
     )
-
-    
 
     # Znajdź numerację
     existing_files = os.listdir(export_dir)
@@ -33,5 +30,4 @@ def upscale_image_with_bigjpg(image_url,export_dir):
     return {
         "bigjpg_url": image_info.get_url(),
         "local_upscaled": upscaled_path,
-        # "local_300dpi": dpi_path
     }
