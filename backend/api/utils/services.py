@@ -118,9 +118,6 @@ def hex_to_rgb(hex_color):
         return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     return (255, 255, 255)
 
-def interpolate_color(start_rgb, end_rgb, t):
-    """Miesza dwa kolory w proporcji t (0.0 - 1.0)."""
-    return tuple(int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * t) for i in range(3))
 
 def create_gradient_vertical(size, start_rgb, end_rgb):
     """Szybki gradient pionowy (resize 1px)."""
@@ -138,17 +135,36 @@ def create_gradient_vertical(size, start_rgb, end_rgb):
     # Skalujemy do docelowego rozmiaru
     return base.resize((width, height), Image.Resampling.BICUBIC)
 
-def create_radial_gradient_css(size, start_rgb, end_rgb, center=(0.5, 0.5)):
-    """Gradient radialny (Circle)."""
+def create_radial_gradient_css(size, start_rgb, end_rgb, center=(0.5, 0.5), offset_y=0):
+    """
+    Gradient radialny (Circle).
+    offset_y: przesunięcie środka w pionie w pikselach (np. 100).
+    """
     width, height = size
+    
     # Optymalizacja: Generujemy na mniejszym obrazku i skalujemy
-    small_w, small_h = 400, int(400 * (height/width))
+    small_w = 400
+    # Zachowujemy proporcje, żeby koło nie zrobiło się jajowate
+    small_h = int(400 * (height / width))
+    
     base = Image.new('RGB', (small_w, small_h))
     pixels = base.load()
     
-    cx, cy = int(small_w * center[0]), int(small_h * center[1])
-    # Promień krycia (do najdalszego rogu)
-    max_dist = math.sqrt(max(cx, small_w-cx)**2 + max(cy, small_h-cy)**2)
+    # 1. Obliczamy przesunięcie relatywne (jaką częścią wysokości jest offset)
+    # Jeśli offset_y = 100 px, a wysokość to 7000 px, to przesuwamy o ok. 0.014 wysokości
+    relative_offset = offset_y / height
+    
+    # 2. Ustalamy środek uwzględniając offset
+    target_cy_normalized = center[1] + relative_offset
+    
+    cx = int(small_w * center[0])
+    cy = int(small_h * target_cy_normalized)
+    
+    # Promień krycia (do najdalszego rogu od NOWEGO środka)
+    max_dist = math.sqrt(max(cx, small_w - cx)**2 + max(cy, small_h - cy)**2)
+    
+    # Zabezpieczenie przed dzieleniem przez zero (gdyby max_dist wyszło 0)
+    if max_dist == 0: max_dist = 1
     
     for y in range(small_h):
         for x in range(small_w):
@@ -158,56 +174,70 @@ def create_radial_gradient_css(size, start_rgb, end_rgb, center=(0.5, 0.5)):
             
     return base.resize((width, height), Image.Resampling.LANCZOS)
 
+def interpolate_color(start_rgb, end_rgb, factor):
+    return tuple(int(start + (end - start) * factor) for start, end in zip(start_rgb, end_rgb))
+
 def create_waves_css(size, start_rgb, end_rgb):
     """
-    Symulacja CSS: repeating-linear-gradient(135deg, A, B 20%, A 40%)
+    Odwzorowanie CSS: repeating-linear-gradient(135deg, A, B 20%, A 40%)
     """
     w, h = size
-    # Aby obrócić obraz bez ucinania rogów, tworzymy większy kwadrat (przekątna)
-    diagonal = int(math.sqrt(w**2 + h**2))
-    canvas_size = diagonal + 100
     
-    # Tworzymy jeden cykl gradientu (A -> B -> A)
-    # W CSS cykl to 40%. Przyjmijmy, że 40% odnosi się do przekątnej.
-    cycle_height = int(canvas_size * 0.40) 
-    if cycle_height < 100: cycle_height = 100
+    # 1. Obliczamy przekątną, która w CSS jest podstawą do wyliczania %
+    diagonal = math.sqrt(w**2 + h**2)
     
-    # Pasek gradientu: A (0%) -> B (50% paska czyli 20% całości) -> A (100% paska czyli 40% całości)
-    strip_h = 256
+    # 2. Tworzymy płótno robocze
+    # Musi być na tyle duże, aby po obrocie o 45 stopni zakryć cały docelowy prostokąt.
+    # Kwadrat o boku = przekątna + zapas jest bezpieczny.
+    canvas_side = int(diagonal * 1.5) 
+    
+    # 3. Definiujemy wysokość jednego cyklu (odpowiada 40% w CSS)
+    cycle_height = int(diagonal * 0.40)
+    
+    # Zabezpieczenie przed zbyt małym cyklem (np. przy małych obrazkach)
+    if cycle_height < 10: cycle_height = 10
+
+    # 4. Generujemy jeden pasek gradientu (cykl)
+    # W CSS: 0% (A) -> 20% (B) -> 40% (A). 
+    # To oznacza, że w połowie cyklu (20% z 40%) mamy kolor B.
+    strip_h = 256 # Rozdzielczość generowania gradientu (dla gładkości)
     strip = Image.new('RGB', (1, strip_h))
     px = strip.load()
+    
     for y in range(strip_h):
         t = y / (strip_h - 1)
-        if t < 0.5:
-            # Pierwsza połowa: A -> B
-            local_t = t * 2 
+        if t <= 0.5:
+            # Pierwsza połowa (0 -> 20%): A -> B
+            local_t = t * 2
             px[0, y] = interpolate_color(start_rgb, end_rgb, local_t)
         else:
-            # Druga połowa: B -> A
+            # Druga połowa (20% -> 40%): B -> A
             local_t = (t - 0.5) * 2
             px[0, y] = interpolate_color(end_rgb, start_rgb, local_t)
             
-    cycle_img = strip.resize((canvas_size, cycle_height), Image.Resampling.BICUBIC)
+    # Skalujemy pasek do docelowej wysokości cyklu
+    cycle_img = strip.resize((canvas_side, cycle_height), Image.Resampling.BICUBIC)
     
-    # Powielamy cykl w pionie, aby wypełnić całe duże płótno
-    repeats = (canvas_size // cycle_height) + 2
-    full_pattern = Image.new('RGB', (canvas_size, cycle_height * repeats))
+    # 5. Powielamy cykl w pionie, aby wypełnić całe płótno robocze
+    repeats = (canvas_side // cycle_height) + 2
+    full_pattern = Image.new('RGB', (canvas_side, cycle_height * repeats))
+    
     for i in range(repeats):
-        full_pattern.paste(cycle_img, (45, i * cycle_height))
+        full_pattern.paste(cycle_img, (0, i * cycle_height))
         
-    # Obracamy o -45 stopni (co daje 135deg w układzie CSS Top-Left)
-    # W PIL rotate jest counter-clockwise, więc 45 to przeciwnie do wskazówek zegara.
-    # CSS 135deg to po skosie w dół w prawo.
-    # Żeby uzyskać pasy idące z lewy-góra na prawy-dół, musimy mieć pasy poziome i obrócić.
-    # Tutaj mamy pasy poziome.
-    rotated = full_pattern.rotate(0, resample=Image.Resampling.BICUBIC, expand=False)
+    # 6. Obrót
+    # CSS 135deg (flow top-left -> bottom-right) daje pasy "bottom-left -> top-right" (/).
+    # Poziome pasy obrócone o 45 stopni (CCW) dadzą ten efekt.
+    # Używamy expand=False, bo płótno jest już nadmiarowe, a chcemy zachować centrum.
+    rotated = full_pattern.rotate(45, resample=Image.Resampling.BICUBIC, expand=False)
     
-    # Wycinamy środek o wymiarach docelowych
+    # 7. Wycinamy środek o wymiarach docelowych (Center Crop)
     center_x, center_y = rotated.width // 2, rotated.height // 2
     left = center_x - w // 2
     top = center_y - h // 2
     
     return rotated.crop((left, top, left + w, top + h))
+
 
 def create_liquid_css(size, start_rgb, end_rgb):
     """
@@ -349,97 +379,88 @@ def handle_bottom_data(bottom_obj, export_dir):
 
 # Upewnij się, że masz zaimportowaną funkcję pomocniczą
 # from utils import get_font_path (zależnie gdzie ją trzymasz)
-
 def process_top_image_with_year(top_image_path, data):
     """
-    Pobiera obraz 'top_image', skaluje go do wymiarów Główki (3661x2480),
-    rysuje na nim rok zgodnie z danymi z Frontendu i zapisuje.
+    Rysuje rok z obsługą 'fake bold' i poprawnym ładowaniem
+    plików .ttf z folderu 'fonts/'.
     """
+    year_data = data.get("year_data") or data.get("year")
     
-    # Dane roku z JSON-a
-    year_data = data.get("year_data") # Uwaga: we frontendzie nazwałeś to 'year_data', sprawdź czy backend dostaje 'year' czy 'year_data'
-    if not year_data:
-        # Fallback, jeśli klucz nazywa się inaczej
-        year_data = data.get("year")
-
-    print(f"ℹ️ Przetwarzanie Główki (Header)...")
+    print(f"ℹ️ Przetwarzanie Główki...")
 
     if not top_image_path or not os.path.exists(top_image_path):
-        print("⚠️ Brak pliku top_image.")
+        print("⚠️ Brak pliku obrazu.")
         return None, None
 
-    # Ścieżka wyjściowa
     output_path = top_image_path.replace(".jpg", "_header_processed.jpg")
     
     try:
-        # --- 1. KONFIGURACJA WYMIARÓW DOCELOWYCH ---
         TARGET_WIDTH = 3661
         TARGET_HEIGHT = 2480
         
-        # --- 2. PRZYGOTOWANIE OBRAZU ---
         with Image.open(top_image_path) as img:
             img = img.convert("RGBA")
+            img_fitted = ImageOps.fit(img, (TARGET_WIDTH, TARGET_HEIGHT), method=Image.Resampling.LANCZOS)
             
-            # SKALOWANIE I PRZYCINANIE (CROP)
-            # ImageOps.fit automatycznie skaluje i centruje obraz, 
-            # aby wypełnił dokładnie 3661x2480 bez deformacji.
-            img_fitted = ImageOps.fit(
-                img, 
-                (TARGET_WIDTH, TARGET_HEIGHT), 
-                method=Image.Resampling.LANCZOS
-            )
-            
-            # --- 3. RYSOWANIE ROKU ---
             if year_data:
                 draw = ImageDraw.Draw(img_fitted)
-                
-                # Pobieranie danych (Wartości są już w pikselach dla 3661x2480)
-                text_content = str(year_data.get("text", "2025"))
-                # Frontend wysyła np. 400.0, rzutujemy na int
+                print("dane year", year_data)
+                # --- DANE ---
+                text_content = str(year_data.get("text", "2026"))
                 font_size = int(float(year_data.get("size", 400))) 
-                
-                # Pobieranie pozycji (X, Y)
                 pos_x = int(float(year_data.get("positionX", 50)))
                 pos_y = int(float(year_data.get("positionY", 50)))
-                
                 text_color = year_data.get("color", "#FFFFFF")
-                font_name = year_data.get("font", "Arial")
-                font_weight = year_data.get("weight", "normal") # Opcjonalnie do obsługi boldów w przyszłości
+                
+                # Sprawdzamy czy ma być BOLD
+                weight_raw = str(year_data.get("weight", "normal")).lower()
+                is_bold = weight_raw in ["bold", "700", "800", "900", "bolder"]
+                
+                # --- 1. ŁADOWANIE CZCIONKI Z FOLDERU FONTS ---
+                # Pobieramy nazwę, np. "Arial" -> "arial"
+                font_name = str(year_data.get("font", "arial"))
 
-                # Ładowanie czcionki
+                font_path = get_font_path(font_name)
+                # Sprawdzamy, czy plik istnieje
+                if not os.path.exists(font_path):
+                    print(f"⚠️ Nie znaleziono pliku: {font_path}. Przełączam na fonts/arial.ttf")
+                    # Fallback na pewniaka (upewnij się, że masz fonts/arial.ttf)
+                  
+
                 try:
-                    # Używamy naszej funkcji pomocniczej
-                    font_path = get_font_path(font_name)
                     font = ImageFont.truetype(font_path, font_size)
-                    
-                    print(f"🖌️ Rysowanie roku: '{text_content}' | Font: {font_size}px | Pos: ({pos_x}, {pos_y})")
-                    
-                    draw.text(
-                        (pos_x, pos_y),
-                        text_content,
-                        font=font,
-                        fill=text_color
-                    )
-                except Exception as e:
-                    print(f"⚠️ Błąd rysowania tekstu: {e}")
-                    # Fallback text w razie błędu fontu
-                    draw.text((pos_x, pos_y), text_content, fill=text_color)
+                except OSError:
+                    print(f"❌ Krytyczny błąd ładowania fontu {font_path}. Używam systemowego default.")
+                    font = ImageFont.load_default() 
+                
+                # --- 2. OBLICZANIE STROKE (Fake Bold) ---
+                if is_bold:
+                    # 3% wysokości fontu jako obrys
+                    stroke_w = int(font_size * 0.03)
+                    if stroke_w < 1: stroke_w = 1
+                else:
+                    stroke_w = 0
 
-            # --- 4. ZAPIS ---
-            img_fitted = img_fitted.convert("RGB") # Konwersja do RGB przed zapisem JPG
+                print(f"🖌️ Rysowanie: '{text_content}' | Font: {font_path} | Bold: {is_bold} (Stroke: {stroke_w}px)")
+
+                # --- 3. RYSOWANIE ---
+                draw.text(
+                    (pos_x, pos_y),
+                    text_content,
+                    font=font,
+                    fill=text_color,
+                    stroke_width=stroke_w,
+                    stroke_fill=text_color
+                )
+
+            # Zapis
+            img_fitted = img_fitted.convert("RGB")
             img_fitted.save(output_path, quality=95, dpi=(300, 300))
-            
-            print(f"✅ Utworzono gotową główkę: {output_path}")
             return output_path, output_path
 
     except Exception as e:
-        print(f"❌ Krytyczny błąd w process_top_image_with_year: {e}")
+        print(f"❌ Błąd: {e}")
         return None, top_image_path
-
-import os
-import requests
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
 def process_calendar_bottom(data, upscaled_top_path=None):
@@ -492,24 +513,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             if header_img:
                 header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
                 base_img.paste(header_fitted, (0, 0))
-
-        # ROK NA GŁÓWCE
-        year_data = data.get("year")
-        if year_data:
-            try:
-                y_text = str(year_data.get("text", "2026"))
-                y_size = int(float(year_data.get("size", 400)))
-                y_posX = int(float(year_data.get("positionX", 50)))
-                y_posY = int(float(year_data.get("positionY", 50)))
-                y_color = year_data.get("color", "#d40808")
-                y_font_name = year_data.get("font", "Arial")
-                
-                font_path = get_font_path(y_font_name) 
-                font = ImageFont.truetype(font_path, y_size)
-                draw.text((y_posX, y_posY), y_text, font=font, fill=y_color)
-            except Exception:
-                pass
-
+   
         # =========================================================
         # KROK C: PRZETWARZANIE PÓL
         # =========================================================

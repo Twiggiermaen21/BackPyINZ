@@ -29,7 +29,7 @@ def get_font_path(font_name):
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     fonts_dir = os.path.join(base_dir, "fonts")
-
+    print("Folder z fontami:", font_name, fonts_dir)
     font_map = {
         "Arial": "arial.ttf",
         "Courier New": "cour.ttf",
@@ -42,7 +42,7 @@ def get_font_path(font_name):
     # Pobieramy nazwę pliku, domyślnie arial.ttf
     filename = font_map.get(font_name, "arial.ttf")
     font_path = os.path.join(fonts_dir, filename)
-
+    print("Ścieżka do fontu:", filename)
     if not os.path.exists(font_path):
         # Fallback na Arial w folderze fonts
         fallback = os.path.join(fonts_dir, "arial.ttf")
