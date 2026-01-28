@@ -147,10 +147,6 @@ class CalendarByProjectView(generics.ListAPIView):
                 to_attr="prefetched_images_for_fields",
             )
         )
-
-   
-
-        print(qs.query)
         return qs
 
 
@@ -269,7 +265,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
         data = self.request.data
         user = self.request.user
         name = data.get("name", "new calendar")
-        print("dada",data)
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 
         top_image_value = serializer.validated_data.get("top_image")
@@ -501,7 +496,7 @@ class CalendarPrint(generics.CreateAPIView):
             if (loaded_data["top_image"] ):
                 result = upscale_image_with_bigjpg(loaded_data["top_image"],export_dir)
                 upscaled_path = result["local_upscaled"]
-                print(f"Ścieżka do pliku: {upscaled_path}")
+               
             if (loaded_data["bottom"]['type'] == 'image' ):
                 result = upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
                 data["bottom"]["image_path"] = result["local_upscaled"]

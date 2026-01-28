@@ -385,8 +385,6 @@ def process_top_image_with_year(top_image_path, data):
     plików .ttf z folderu 'fonts/'.
     """
     year_data = data.get("year_data") or data.get("year")
-    
-    print(f"ℹ️ Przetwarzanie Główki...")
 
     if not top_image_path or not os.path.exists(top_image_path):
         print("⚠️ Brak pliku obrazu.")
@@ -404,7 +402,6 @@ def process_top_image_with_year(top_image_path, data):
             
             if year_data:
                 draw = ImageDraw.Draw(img_fitted)
-                print("dane year", year_data)
                 # --- DANE ---
                 text_content = str(year_data.get("text", "2026"))
                 font_size = int(float(year_data.get("size", 400))) 
