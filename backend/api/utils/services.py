@@ -1,12 +1,13 @@
 # calendar_export/services.py
-
 import os
 import requests
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-import traceback
-from ..models import Calendar, CalendarYearData, GeneratedImage, BottomImage, BottomColor, BottomGradient, ImageForField 
-from .utils import hex_to_rgb, get_gradient_css, get_font_path, load_image_robust
+from ..models import Calendar, CalendarYearData, GeneratedImage,  ImageForField 
+from .utils import hex_to_rgb, get_font_path, load_image_robust
+import math
+
+
 
 def fetch_calendar_data(calendar_id):
     """
@@ -104,10 +105,7 @@ def handle_top_image(calendar, export_dir):
             print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
             
     return gen_img.url
-from PIL import Image, ImageDraw, ImageChops
-import math
-import os
-
+ 
 # =========================================================
 # 🛠️ FUNKCJE POMOCNICZE (Odwzorowanie CSS w PIL)
 # =========================================================
@@ -195,7 +193,7 @@ def create_waves_css(size, start_rgb, end_rgb):
     repeats = (canvas_size // cycle_height) + 2
     full_pattern = Image.new('RGB', (canvas_size, cycle_height * repeats))
     for i in range(repeats):
-        full_pattern.paste(cycle_img, (0, i * cycle_height))
+        full_pattern.paste(cycle_img, (45, i * cycle_height))
         
     # Obracamy o -45 stopni (co daje 135deg w układzie CSS Top-Left)
     # W PIL rotate jest counter-clockwise, więc 45 to przeciwnie do wskazówek zegara.
