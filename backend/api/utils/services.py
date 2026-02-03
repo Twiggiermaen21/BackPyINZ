@@ -257,11 +257,6 @@ def create_liquid_css(size, start_rgb, end_rgb):
     top = center_y - h // 2
     return rotated.crop((left, top, left + w, top + h))
 
-
-# =========================================================
-# 🏭 GENERATOR TŁA
-# =========================================================
-
 def generate_bottom_bg_image(width, height, bg_color, end_color, theme, variant):
     rgb_start = hex_to_rgb(bg_color)
     rgb_end = hex_to_rgb(end_color)
@@ -307,9 +302,6 @@ def generate_bottom_bg_image(width, height, bg_color, end_color, theme, variant)
             return create_gradient_vertical((width, height), rgb_start, rgb_end)
 
 
-# =========================================================
-# 🚀 GŁÓWNA FUNKCJA (handle_bottom_data)
-# =========================================================
 
 def handle_bottom_data(bottom_obj, export_dir):
     """
@@ -377,8 +369,7 @@ def handle_bottom_data(bottom_obj, export_dir):
 
     return None
 
-# Upewnij się, że masz zaimportowaną funkcję pomocniczą
-# from utils import get_font_path (zależnie gdzie ją trzymasz)
+
 def process_top_image_with_year(top_image_path, data):
     """
     Rysuje rok z obsługą 'fake bold' i poprawnym ładowaniem

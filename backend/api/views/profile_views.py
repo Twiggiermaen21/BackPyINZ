@@ -1,12 +1,9 @@
 
 from django.contrib.auth.models import User
-
 from rest_framework.permissions import IsAuthenticated,  AllowAny
-
 from ..models import *
 from ..serializers import *
 from ..pagination import *
-
 from rest_framework import generics, status, response
 from django.core.mail import send_mail
 from django.conf import settings
@@ -14,7 +11,6 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from cloudinary.uploader import destroy
-
 
 
 class UpdateProfileImageView(generics.UpdateAPIView):
@@ -53,9 +49,6 @@ class ProfileUpdateView(generics.UpdateAPIView):
     def get_object(self):
         return self.request.user
 
-
-
-
 class EmailUpdateView(generics.UpdateAPIView):
     serializer_class = EmailUpdateSerializer
     permission_classes = [IsAuthenticated]
@@ -84,8 +77,6 @@ class PasswordChangeView(generics.UpdateAPIView):
         serializer.save()
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
-
-
 class PasswordResetView(generics.GenericAPIView):
     serializer_class = PasswordResetSerializer
     permission_classes = [AllowAny]
@@ -113,7 +104,6 @@ class PasswordResetView(generics.GenericAPIView):
         )
 
         return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
-
 
 class PasswordResetConfirmView(generics.GenericAPIView):
     serializer_class = PasswordResetConfirmSerializer

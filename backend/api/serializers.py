@@ -12,11 +12,6 @@ from .models import CalendarProduction
 User = get_user_model()
 
 
-
-
-
-
-
 class ProfileImageSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
 
@@ -145,8 +140,6 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class SendEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
-
-
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -186,9 +179,6 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         })
 
         return data
-
-
-
 
 class GenerateImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -493,7 +483,6 @@ class UpscalingSerializer(serializers.ModelSerializer):
             "upscale_factor": {"read_only": True},
             "created_at": {"read_only": True}
         }
-
 
 class StylArtystycznySerializer(serializers.ModelSerializer):
     class Meta:

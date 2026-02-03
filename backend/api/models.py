@@ -2,7 +2,6 @@ from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
-# Create your models here.
 from cloudinary.models import CloudinaryField
 
 class ProfileImage(models.Model):
@@ -31,8 +30,6 @@ class GeneratedImage(models.Model):
  
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
-
-
 
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -104,7 +101,6 @@ class CalendarProduction(models.Model):
     def __str__(self):
         return f"{self.calendar.name} - {self.get_status_display()}"
 
-
 class CalendarMonthFieldText(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -142,8 +138,6 @@ class ImageForField(models.Model):
     field_number = models.IntegerField()
     url = models.URLField()
     created_at = models.DateTimeField(auto_now_add=True)
-
-
 
 class BottomImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -183,8 +177,6 @@ class Upscaling(models.Model):
 
     def __str__(self):
         return f"Upscaling {self.id} - {self.output_file or 'pending'}"
-
-from django.db import models
 
 class StylArtystyczny(models.Model):
     nazwa = models.CharField(max_length=100)
