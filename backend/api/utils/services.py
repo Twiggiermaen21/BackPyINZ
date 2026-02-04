@@ -6,7 +6,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from ..models import Calendar, CalendarYearData, GeneratedImage,  ImageForField 
 from .utils import hex_to_rgb, get_font_path, load_image_robust
 import math
-
+import time
+import shutil
+from io import BytesIO
 
 
 def fetch_calendar_data(calendar_id):
@@ -105,10 +107,6 @@ def handle_top_image(calendar, export_dir):
             print(f"GeneratedImage z id {calendar.top_image_id} nie istnieje.")
             
     return gen_img.url
- 
-# =========================================================
-# 🛠️ FUNKCJE POMOCNICZE (Odwzorowanie CSS w PIL)
-# =========================================================
 
 def hex_to_rgb(hex_color):
     """Zamienia hex string na tuple RGB."""
@@ -117,7 +115,6 @@ def hex_to_rgb(hex_color):
     if len(hex_color) == 6:
         return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     return (255, 255, 255)
-
 
 def create_gradient_vertical(size, start_rgb, end_rgb):
     """Szybki gradient pionowy (resize 1px)."""
@@ -450,274 +447,179 @@ def process_top_image_with_year(top_image_path, data):
         print(f"❌ Błąd: {e}")
         return None, top_image_path
 
-# --- 3. GŁÓWNA FUNKCJA GENERUJĄCA ---
+
+
+
+
 def process_calendar_bottom(data, upscaled_top_path=None):
     
     bottom_data = data.get("bottom", {})
-    base_image_path = bottom_data.get("image_path")
+    template_image_path = bottom_data.get("image_path")
 
-    if not base_image_path:
-        print("❌ Błąd: Brak ścieżki do tła w JSON.")
-        return None
+    # --- 1. KONFIGURACJA ŚCIEŻKI ZAPISU ---
+    timestamp = int(time.time())
+    output_filename = f"final_calendar_{timestamp}.jpg"
+    base_export_dir = os.path.join(os.getcwd(), "media", "calendar_exports")
     
+    if not os.path.exists(base_export_dir):
+        try: os.makedirs(base_export_dir)
+        except: base_export_dir = os.getcwd()
+
+    output_path = os.path.join(base_export_dir, output_filename)
+
+    # --- KONFIGURACJA WYMIARÓW ---
+    CANVAS_WIDTH = 3661
+    H_HEADER = 2480       
+    H_MONTH_BOX = 1594    
+    H_AD_STRIP = 768      
+    MARGIN_Y = 25         
+    
+    BOX_WIDTH = 3425
+    AD_PADDING_X = 112
+    AD_CONTENT_WIDTH = CANVAS_WIDTH - (2 * AD_PADDING_X)
+    BOX_X = (CANVAS_WIDTH - BOX_WIDTH) // 2 
+
+    H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
+    TOTAL_HEIGHT = H_HEADER + (3 * H_SEGMENT)
+    
+    # 📌 NOWE: Obliczamy wysokość samego dołu (plecków), żeby tam wkleić tło
+    BACKING_HEIGHT = TOTAL_HEIGHT - H_HEADER
+
+    MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
+
+    print(f"ℹ️ Start generowania. Output: {output_path}")
+
     try:
-        base_image_path = os.path.normpath(base_image_path)
-        if not os.path.exists(base_image_path):
-             print(f"❌ Błąd: Plik tła nie istnieje: {base_image_path}")
-             return None
-
-        # --- KONFIGURACJA WYMIARÓW ---
-        CANVAS_WIDTH = 3661
-        H_HEADER = 2480       
-        H_MONTH_BOX = 1594    
-        H_AD_STRIP = 768      
-        MARGIN_Y = 25 
+        # Tworzymy białe tło dla CAŁOŚCI (żeby pod główką było biało, jeśli tło nie sięga)
+        base_img = Image.new("RGB", (CANVAS_WIDTH, TOTAL_HEIGHT), "white")
         
-        # --- PADDING ---
-        PADDING_X = 112
-        W_CONTENT = CANVAS_WIDTH - (2 * PADDING_X) 
+        # =========================================================
+        # 1. TŁO (POPRAWIONE: TYLKO NA DÓŁ / PLECKI)
+        # =========================================================
+        if template_image_path and os.path.exists(template_image_path):
+            with Image.open(template_image_path) as src_bg:
+                bg_layer = src_bg.convert("RGBA")
+                
+                # 📌 ZMIANA: Skalujemy tło tylko do wymiaru 'BACKING_HEIGHT' (same plecki), a nie całości.
+                # Dzięki temu zdjęcie nie jest rozciągnięte na główkę.
+                bg_layer = ImageOps.fit(bg_layer, (CANVAS_WIDTH, BACKING_HEIGHT), method=Image.Resampling.LANCZOS)
+                
+                # 📌 ZMIANA: Wklejamy przesunięte o H_HEADER w dół (pod główkę)
+                # (0, H_HEADER) oznacza: X=0, Y=2480px
+                base_img.paste(bg_layer, (0, H_HEADER))
+                print(f"🖼️ Tło wklejone od Y={H_HEADER} (Wysokość tła: {BACKING_HEIGHT}px)")
+        else:
+            print("⚠️ Brak pliku tła, zostawiam białe.")
         
-        H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
-        TOTAL_HEIGHT = H_HEADER + (3 * H_SEGMENT)
-        
-        MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
-
-        print(f"ℹ️ Start generowania. Padding: {PADDING_X}px, Szerokość robocza: {W_CONTENT}px")
-
-        # Otwarcie tła
-        with Image.open(base_image_path) as src_img:
-            base_img = src_img.convert("RGBA")
-            
-        if base_img.size != (CANVAS_WIDTH, TOTAL_HEIGHT):
-            base_img = base_img.resize((CANVAS_WIDTH, TOTAL_HEIGHT), Image.Resampling.LANCZOS)
-
         draw = ImageDraw.Draw(base_img)
 
         # =========================================================
-        # KROK A: GŁÓWKA
+        # 2. GŁÓWKA (Bez zmian)
         # =========================================================
-        if upscaled_top_path:
-            header_img = load_image_robust(upscaled_top_path) 
-            if header_img:
+        if upscaled_top_path and os.path.exists(upscaled_top_path):
+            try:
+                header_img = Image.open(upscaled_top_path).convert("RGBA")
                 header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
-                base_img.paste(header_fitted, (0, 0))
-   
+                base_img.paste(header_fitted, (0, 0), header_fitted)
+            except Exception as e:
+                print(f"⚠️ Błąd główki: {e}")
+
         # =========================================================
-        # KROK C: PRZETWARZANIE PÓL
+        # 3. SEGMENTY (Bez zmian)
         # =========================================================
         raw_fields = data.get("fields", {})
-        
+
         for i in range(1, 4):
             prev_h = (i - 1) * H_SEGMENT
             box_start_y = H_HEADER + prev_h + MARGIN_Y
             strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
             
-            # 1. KALENDARIUM
-            try:
-                box_coords = [(PADDING_X, box_start_y), (PADDING_X + W_CONTENT, box_start_y + H_MONTH_BOX)]
-                draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
-                
-                month_name = MONTH_NAMES[i-1]
-                m_font_path = get_font_path("Arial") 
-                m_font = ImageFont.truetype(m_font_path, 150)
-                m_color = "#1d4ed8"
-                
-                left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
-                m_w = right - left
-                center_x = PADDING_X + (W_CONTENT / 2)
-                m_x = center_x - (m_w / 2)
-                m_y = box_start_y + 40 
-                
-                draw.text((m_x, m_y), month_name, font=m_font, fill=m_color)
-                
-                g_text = "[Siatka dni]"
-                g_font = ImageFont.truetype(m_font_path, 100)
-                gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
-                gw = gr - gl
-                gx = center_x - (gw / 2)
-                gy = box_start_y + (H_MONTH_BOX - (gb - gt)) / 2 - gt
-                draw.text((gx, gy), g_text, font=g_font, fill="#9ca3af")
-
-            except Exception as e:
-                print(f"⚠️ Błąd rysowania kalendarium {i}: {e}")
-
-            # ---------------------------------------------------------
-            # 2. PASEK REKLAMOWY
-            # ---------------------------------------------------------
-            strip_img = Image.new("RGBA", (W_CONTENT, H_AD_STRIP), (255, 255, 255, 0))
-            strip_draw = ImageDraw.Draw(strip_img)
-           
-            config = raw_fields.get(str(i)) or raw_fields.get(i)
+            # A. KALENDARIUM
+            box_coords = [(BOX_X, box_start_y), (BOX_X + BOX_WIDTH, box_start_y + H_MONTH_BOX)]
+            draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
             
-            scale = 1.0
-            pos_x = 0
-            pos_y = 0
+            month_name = MONTH_NAMES[i-1]
+            try: m_font = ImageFont.truetype("arial.ttf", 150)
+            except: m_font = ImageFont.load_default()
+            
+            center_x_box = BOX_X + (BOX_WIDTH / 2)
+            left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
+            draw.text((center_x_box - ((right-left)/2), box_start_y + 40), month_name, font=m_font, fill="#1d4ed8")
+            
+            g_text = "[Siatka dni]"
+            try: g_font = ImageFont.truetype("arial.ttf", 100)
+            except: g_font = ImageFont.load_default()
+            gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
+            draw.text((center_x_box - ((gr-gl)/2), box_start_y + (H_MONTH_BOX - (gb-gt))/2 - gt), g_text, font=g_font, fill="#9ca3af")
+
+            # B. PASEK REKLAMOWY
+            strip_img = Image.new("RGBA", (AD_CONTENT_WIDTH, H_AD_STRIP), (255, 255, 255, 0))
+            strip_draw = ImageDraw.Draw(strip_img)
+            
+            config = raw_fields.get(str(i)) or raw_fields.get(i)
+            scale = 1.0; pos_x = 0; pos_y = 0
 
             if config:
-                raw_scale = config.get("size")
-                if raw_scale is not None:
-                    try: scale = float(raw_scale)
-                    except: scale = 1.0
+                try: scale = float(config.get("size", 1.0))
+                except: scale = 1.0
+                try: pos_x = int(float(config.get("positionX", 0)))
+                except: pos_x = 0
+                try: pos_y = int(float(config.get("positionY", 0)))
+                except: pos_y = 0
 
-                raw_pos_x = config.get("positionX")
-                if raw_pos_x is not None:
-                    try: pos_x = int(float(raw_pos_x))
-                    except: pos_x = 0
-
-                raw_pos_y = config.get("positionY")
-                if raw_pos_y is not None:
-                    try: pos_y = int(float(raw_pos_y))
-                    except: pos_y = 0
-                
-                print(f"   ⚙️ [Pasek {i}] Obrazki: Skala={scale}, X={pos_x}, Y={pos_y}")
-
-                # =========================================================
-                # A. PRZETWARZANIE TEKSTU (SYMULACJA BOLD - PROPORCJA 1/60)
-                # =========================================================
                 if config.get("text"):
-                    text_content = config["text"]
+                    text = config["text"]
+                    f_size = int(config.get("size", 200))
+                    try: font_ad = ImageFont.truetype("arial.ttf", f_size)
+                    except: font_ad = ImageFont.load_default()
                     
-                    raw_size = config.get("size", 200)
-                    try:
-                        f_size = int(float(raw_size))
-                        if f_size < 10: f_size = 200
-                    except: f_size = 200
+                    l, t, r, b = strip_draw.textbbox((0, 0), text, font=font_ad)
+                    text_w = r - l; text_h = b - t
+                    txt_x = (AD_CONTENT_WIDTH - text_w) / 2
+                    txt_y = (H_AD_STRIP - text_h) / 2
+                    strip_draw.text((txt_x, txt_y), text, font=font_ad, fill=config.get("color", "#333"))
 
-                    f_color = config.get("color", "#000000")
-                    f_font_name = config.get("font", "Arial")
-                    font_path = get_font_path(f_font_name)
-                    
-                    # --- KONFIGURACJA POGRUBIENIA (DELIKATNY BOLD) ---
-                    raw_weight = config.get("weight", "normal")
-                    if raw_weight == "bold":
-                        # Dzielimy przez 60, żeby bold był subtelny, a nie "napuchnięty"
-                        bold_stroke = int(f_size / 60)
-                        if bold_stroke < 1: bold_stroke = 1
-                    else:
-                        bold_stroke = 0
-                    
-                    try:
-                        font = ImageFont.truetype(font_path, f_size)
-                        
-                        INTERNAL_MARGIN = 10 
-                        MAX_WIDTH_LIMIT = W_CONTENT - (INTERNAL_MARGIN * 2)
-                        
-                        print(f"   📝 [Pasek {i}] Tekst: '{text_content[:20]}...' (Waga: {raw_weight}, Stroke: {bold_stroke})")
-
-                        # --- ALGORYTM ZAWIJANIA ---
-                        words = text_content.split()
-                        lines = []
-                        current_line = ""
-
-                        for word in words:
-                            # WAŻNE: Tu też uwzględniamy bold_stroke
-                            l, t, r, b = strip_draw.textbbox((0, 0), word, font=font, stroke_width=bold_stroke)
-                            word_width = r - l
-
-                            # 1. Słowo gigant (Hard Wrap)
-                            if word_width > MAX_WIDTH_LIMIT:
-                                if current_line:
-                                    lines.append(current_line)
-                                    current_line = ""
-                                
-                                part = ""
-                                for char in word:
-                                    test_part = part + char
-                                    # POPRAWKA: Dodano stroke_width=bold_stroke w tej linii poniżej!
-                                    l, t, r, b = strip_draw.textbbox((0, 0), test_part, font=font, stroke_width=bold_stroke)
-                                    if (r - l) <= MAX_WIDTH_LIMIT:
-                                        part = test_part
-                                    else:
-                                        lines.append(part)
-                                        part = char
-                                current_line = part
-                            
-                            # 2. Słowo normalne
-                            else:
-                                test_line = (current_line + " " + word).strip()
-                                l, t, r, b = strip_draw.textbbox((0, 0), test_line, font=font, stroke_width=bold_stroke)
-                                line_width = r - l
-                                
-                                if line_width <= MAX_WIDTH_LIMIT:
-                                    current_line = test_line
-                                else:
-                                    lines.append(current_line)
-                                    current_line = word
-
-                        if current_line:
-                            lines.append(current_line)
-
-                        # --- RYSOWANIE ---
-                        if lines:
-                            _, t_box, _, b_box = strip_draw.textbbox((0, 0), "Ay", font=font, stroke_width=bold_stroke)
-                            line_height = b_box - t_box
-                            line_spacing = line_height * 1.15
-                            total_block_height = (len(lines) * line_spacing) - (line_spacing - line_height) 
-                            
-                            start_y = (H_AD_STRIP - total_block_height) / 2
-                            start_y -= t_box
-                            current_y = start_y
-                            max_text_width = 0
-
-                            for line in lines:
-                                l, t, r, b = strip_draw.textbbox((0, 0), line, font=font, stroke_width=bold_stroke)
-                                current_line_width = r - l
-                                
-                                center_x = (W_CONTENT - current_line_width) / 2
-                                
-                                strip_draw.text(
-                                    (center_x, current_y), 
-                                    line, 
-                                    font=font, 
-                                    fill=f_color,
-                                    stroke_width=bold_stroke,
-                                    stroke_fill=f_color
-                                )
-                                
-                                if current_line_width > max_text_width:
-                                    max_text_width = current_line_width
-                                
-                                current_y += line_spacing
-
-                            print(f"      ✅ Rysowanie: {len(lines)} linii. Max szer: {max_text_width}px.")
-
-                    except OSError:
-                        print(f"❌ Błąd: Nie znaleziono pliku czcionki: {font_path}.")
-                    except Exception as e:
-                        print(f"❌ Nieoczekiwany błąd tekstu: {e}")
-
-            # =========================================================
             # C. OBRAZKI DODATKOWE
-            # =========================================================
             for key, val in raw_fields.items():
                 if not isinstance(val, dict): continue
-                if val.get("field_number") == i and val.get("image_url"):
-                    img_url = val.get("image_url")
-                    overlay = load_image_robust(img_url)
-                    
-                    if overlay:
-                        try:
-                            new_w = int(overlay.width * scale)
-                            new_h = int(overlay.height * scale)
-                            if new_w <= 0: new_w = 1
-                            if new_h <= 0: new_h = 1
-                            
+                if str(val.get("field_number")) == str(i) and val.get("image_url"):
+                    img_source = val.get("image_url")
+                    overlay = None
+                    try:
+                        if img_source.lower().startswith(("http://", "https://")):
+                            response = requests.get(img_source, timeout=10)
+                            if response.status_code == 200:
+                                overlay = Image.open(BytesIO(response.content)).convert("RGBA")
+                        else:
+                            local_path = os.path.normpath(img_source)
+                            if os.path.exists(local_path):
+                                overlay = Image.open(local_path).convert("RGBA")
+                        
+                        if overlay:
+                            new_w = int(overlay.width * scale); new_h = int(overlay.height * scale)
+                            if new_w < 1: new_w = 1; 
+                            if new_h < 1: new_h = 1
                             overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
                             strip_img.paste(overlay, (pos_x, pos_y), overlay)
-                            print(f"      🖼️ Wklejono obrazek: {img_url}")
-                            
-                        except Exception as e:
-                            print(f"⚠️ Błąd wklejania obrazka: {e}")
+                    except Exception as e:
+                        print(f"⚠️ Błąd img: {e}")
 
-            # FINALIZACJA
-            base_img.paste(strip_img, (PADDING_X, strip_start_y), strip_img)
-
+            base_img.paste(strip_img, (AD_PADDING_X, strip_start_y), strip_img)
 
         # 4. ZAPIS
         base_img = base_img.convert("RGB")
-        base_img.save(base_image_path, dpi=(300, 300), quality=95)
-        print(f"✅ Sukces: {base_image_path}")
-        return base_image_path
+        base_img.save(output_path, dpi=(300, 300), quality=95)
+        print(f"✅ Sukces: Plik zapisany w {output_path}")
+
+        # 5. CLEANUP
+        if template_image_path:
+            temp_dir_to_delete = os.path.dirname(os.path.normpath(template_image_path))
+            if os.path.abspath(temp_dir_to_delete) != os.path.abspath(base_export_dir):
+                if os.path.exists(temp_dir_to_delete):
+                    try: shutil.rmtree(temp_dir_to_delete)
+                    except: pass
+
+        return output_path
 
     except Exception as e:
         print(f"❌ Krytyczny błąd: {e}")
