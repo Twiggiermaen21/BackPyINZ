@@ -462,27 +462,6 @@ class CalendarProductionSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-class OutpaintingSDXLSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OutpaintingSDXL
-        fields = '__all__'
-        extra_kwargs = {
-                       "output_file":{"read_only":True},
-                       "output_format":{"read_only":True},
-                       "right":{"read_only":True},
-                       "left":{"read_only":True},
-                       "up":{"read_only":True},
-                       "down":{"read_only":True}}
-
-class UpscalingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Upscaling
-        fields = '__all__'
-        extra_kwargs = {
-            "output_file": {"read_only": True},
-            "upscale_factor": {"read_only": True},
-            "created_at": {"read_only": True}
-        }
 
 class StylArtystycznySerializer(serializers.ModelSerializer):
     class Meta:

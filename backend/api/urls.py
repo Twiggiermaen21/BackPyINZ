@@ -5,8 +5,6 @@ from .views.calendar_views import *
 from .views.image_views import *
 urlpatterns=[
 path('generate/', GenerateImage.as_view(), name='generate-image'),
-path('generate-image-to-image-sdxl/', GenerateImageToImageSDXLView.as_view(), name='generate-image-to-image-sdxl'),
-path('upscale-image/', UpscalingView.as_view(), name='upscale-image'),
 path("images-by-project/<str:project_name>/", ImagesByProjectView.as_view()),
 
     path("user/update-profile/", ProfileUpdateView.as_view(), name="update-profile"),

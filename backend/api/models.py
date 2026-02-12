@@ -10,7 +10,6 @@ class ProfileImage(models.Model):
 
     def __str__(self):
         return self.user.username
-
 class GeneratedImage(models.Model):
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     prompt = models.CharField(max_length=500)
@@ -30,7 +29,6 @@ class GeneratedImage(models.Model):
  
     url = models.CharField(max_length=255, default="unknown")
     created_at = models.DateTimeField(auto_now_add=True)
-
 class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     name = models.CharField(max_length=100, default="new calendar")
@@ -61,7 +59,6 @@ class Calendar(models.Model):
     bottom_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     bottom_object_id = models.PositiveIntegerField(null=True, blank=True)
     bottom = GenericForeignKey("bottom_content_type", "bottom_object_id")
-
 class CalendarProduction(models.Model):
     STATUS_CHOICES = (
         ("draft", "Projekt"),
@@ -154,29 +151,6 @@ class BottomGradient(models.Model):
     end_color = models.CharField(max_length=7)
     direction = models.CharField(max_length=20, blank=True, null=True)
     theme = models.CharField(max_length=50, blank=True, null=True)
-class OutpaintingSDXL(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    input_image = models.ForeignKey(GeneratedImage, on_delete=models.CASCADE, related_name="outpaintings")
-    output_file = models.CharField(max_length=255, blank=True, null=True, default="", help_text="Ścieżka do wygenerowanego obrazu")
-
-    left = models.IntegerField(default=0, help_text="Ile pikseli rozszerzyć w lewo")
-    right = models.IntegerField(default=0, help_text="Ile pikseli rozszerzyć w prawo")
-    up = models.IntegerField(default=0, help_text="Ile pikseli rozszerzyć w górę")
-    down = models.IntegerField(default=0, help_text="Ile pikseli rozszerzyć w dół")
-
-    output_format = models.CharField(max_length=10, default="png", help_text="Format wygenerowanego obrazu (np. webp, png)")
-
-    def __str__(self):
-        return f"OutpaintingSDXL {self.id} - {self.output_file or 'pending'}"
-class Upscaling(models.Model):
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    input_image = models.ForeignKey(GeneratedImage, on_delete=models.CASCADE, related_name="upscalings")
-    output_file = models.CharField(max_length=255, blank=True, null=True, default="", help_text="Ścieżka do wygenerowanego obrazu")
-    upscale_factor = models.IntegerField(default=2, help_text="Współczynnik skalowania obrazu (np. 2x, 4x)")
-
-    def __str__(self):
-        return f"Upscaling {self.id} - {self.output_file or 'pending'}"
 
 class StylArtystyczny(models.Model):
     nazwa = models.CharField(max_length=100)
@@ -244,12 +218,6 @@ class Realizm(models.Model):
 class StylNarracyjny(models.Model):
     nazwa = models.CharField(max_length=100)
     tlumaczenie = models.TextField(blank=True, null=True)
-
-    class Meta:
-        ordering = ['id']
-
-class CalendarType(models.Model):
-    nazwa = models.CharField(max_length=100)
 
     class Meta:
         ordering = ['id']
