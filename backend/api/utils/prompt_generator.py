@@ -108,7 +108,7 @@ def get_detailed_prompt_from_model(
     },
     {"role": "user", "content": full_prompt}
 ]
-
+    print("Generated full prompt for model:", messages)
     response = client.chat.completions.create(
         model=model,
         messages=messages,

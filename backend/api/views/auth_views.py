@@ -61,28 +61,28 @@ class ActivateUserView(generics.GenericAPIView):
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({"detail": "Nieprawidłowy link aktywacyjny."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ZMIANA: Jeśli konto jest już aktywne, zwracamy 200 (Sukces), a nie błąd.
+        # Dzięki temu frontend wyświetli "Sukces" zamiast czerwonego błędu przy drugim kliknięciu.
         if user.is_active:
-            return Response({"detail": "Konto już aktywne."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Konto jest już aktywne. Możesz się zalogować."}, status=status.HTTP_200_OK)
 
         if default_token_generator.check_token(user, token):
             user.is_active = True
             user.save()
-            return Response({"detail": "Konto zostało aktywowane."}, status=status.HTTP_200_OK)
+            return Response({"detail": "Konto zostało pomyślnie aktywowane."}, status=status.HTTP_200_OK)
         else:
-            return Response({"detail": "Nieprawidłowy lub wygasły token."}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response({"detail": "Link aktywacyjny jest nieprawidłowy lub wygasł."}, status=status.HTTP_400_BAD_REQUEST)
 class CreateUserView(generics.ListCreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):
-        print("📥 Otrzymane dane:", request.data)  # <- zobaczysz, co przyszło z frontendu
+        print("📥 Otrzymane dane:", request.data)
 
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             print("✅ Dane są poprawne, tworzymy użytkownika...")
-            # Tworzymy użytkownika, ustawiamy nieaktywny
             user = serializer.save(is_active=False)
             print("👤 Utworzono użytkownika:", user.username)
 
@@ -91,13 +91,23 @@ class CreateUserView(generics.ListCreateAPIView):
             token = default_token_generator.make_token(user)
             activation_link = f"http://localhost:5173/activate-account/{uid}/{token}/"
 
+            # --- ŁADOWANIE SZABLONU Z PLIKU ---
+            context = {
+                'user': user,
+                'activation_link': activation_link
+            }
+            # Upewnij się, że ścieżka odpowiada lokalizacji Twojego pliku
+            html_content = render_to_string('activation_email.html', context)
+
             # Wysyłamy maila
             send_mail(
                 subject="Aktywacja konta",
-                message=f"Kliknij w link aby aktywować swoje konto: {activation_link}",
+                # Wersja tekstowa (fallback) dla klientów bez HTML
+                message=f"Witaj {user.username}. Kliknij w link aby aktywować swoje konto: {activation_link}",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
                 fail_silently=False,
+                html_message=html_content  # Przekazujemy wyrenderowany HTML
             )
             print("📧 Wysłano maila aktywacyjnego na:", user.email)
 
@@ -105,7 +115,7 @@ class CreateUserView(generics.ListCreateAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         else:
             print("❌ Błąd walidacji serializer:")
-            print(serializer.errors)  # <- tu zobaczysz dokładny powód błędu 400
+            print(serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class MyTokenObtainPairView(TokenObtainPairView): 

@@ -4,7 +4,7 @@ import requests
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from ..models import Calendar, CalendarYearData, GeneratedImage,  ImageForField 
-from .utils import hex_to_rgb, get_font_path, load_image_robust
+from .utils import hex_to_rgb, get_font_path
 import math
 import time
 import shutil
@@ -607,9 +607,22 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             base_img.paste(strip_img, (AD_PADDING_X, strip_start_y), strip_img)
 
         # 4. ZAPIS
-        base_img = base_img.convert("RGB")
-        base_img.save(output_path, dpi=(300, 300), quality=95)
-        print(f"✅ Sukces: Plik zapisany w {output_path}")
+        # Konwersja na CMYK
+        base_img = base_img.convert("CMYK")
+        
+        # Opcjonalnie: Zmiana nazwy pliku, aby wiedzieć, że to wersja do druku
+        output_filename = f"final_calendar_{timestamp}_CMYK.jpg"
+        output_path = os.path.join(base_export_dir, output_filename)
+
+        # Zapis - JPG obsługuje CMYK, ale nie wszystkie przeglądarki obrazów wyświetlą to poprawnie na ekranie.
+        # Drukarnia jednak sobie z tym poradzi.
+        base_img.save(output_path, format="JPEG", dpi=(300, 300), quality=95, subsampling=0)
+        
+        # ALTERNATYWA: Często drukarnie wolą format TIFF lub PDF dla CMYK
+        # output_path_tiff = output_path.replace(".jpg", ".tiff")
+        # base_img.save(output_path_tiff, format="TIFF", dpi=(300, 300), compression="tiff_lzw")
+        
+        print(f"✅ Sukces: Plik CMYK zapisany w {output_path}")
 
         # 5. CLEANUP
         if template_image_path:
