@@ -109,16 +109,26 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
 class CalendarByProjectView(generics.ListAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-
+    
+    # lookup_url_kwarg jest używany głównie w RetrieveAPIView (do pobrania jednego obiektu),
+    # ale w ListAPIView pobieramy go ręcznie w get_queryset, więc ta linijka jest opcjonalna,
+    # choć nie szkodzi.
     lookup_url_kwarg = "project_name"
 
     def get_queryset(self):
         user = self.request.user
-        name = self.kwargs.get("project_name")  # teraz to nazwa, nie id
+        project_name = self.kwargs.get("project_name")
+
+        # 1. Filtrowanie po autorze i nazwie projektu
         qs = Calendar.objects.filter(
             author=user,
-            name=name
-        ).select_related(
+            name=project_name
+        )
+
+        # 2. select_related
+        # Pobieramy relacje FK oraz ContentType, aby Django wiedziało od razu,
+        # w jakich tabelach szukać danych dla GenericForeignKey.
+        qs = qs.select_related(
             "top_image",
             "year_data",
             "field1_content_type",
@@ -127,38 +137,33 @@ class CalendarByProjectView(generics.ListAPIView):
             "bottom_content_type",
         )
 
+        # 3. prefetch_related
+        # Wystarczy podać nazwy pól GenericForeignKey.
+        # Django automatycznie pobierze dane z odpowiednich tabel (Text/Image dla fieldX,
+        # oraz Color/Image/Gradient dla bottom) i przypisze je do obiektów.
+        # Usuwamy 'to_attr' i sztywne QuerySety, bo ograniczałyby one typy pól.
         qs = qs.prefetch_related(
-            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
-            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
-            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
+            "field1",
+            "field2",
+            "field3",
+            "bottom"
         )
 
-        # POPRAWIONE
-        qs = qs.prefetch_related(
-            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
-            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
-            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
-        )
-
-        qs = qs.prefetch_related(
-            Prefetch(
-                "imageforfield_set",
-                queryset=ImageForField.objects.filter(user=user),
-                to_attr="prefetched_images_for_fields",
-            )
-        )
         return qs
-
 
 class CalendarByIdView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-    lookup_url_kwarg = "pk"   # domyślnie może być też 'pk'
+    lookup_field = "pk"  # Domyślne, ale dla jasności zostawiamy
 
-    def get_queryset(self, request, *args, **kwargs):
-        user = self.request.user
+    def get_queryset(self):
+        # 1. Podstawowe filtrowanie po autorze
+        # Nie musisz filtrować po ID tutaj - RetrieveAPIView zrobi to automatycznie na końcu
+        qs = Calendar.objects.filter(author=self.request.user)
 
-        qs = Calendar.objects.filter(author=user, id=kwargs["pk"]).select_related(
+        # 2. select_related
+        # Pobieramy relacje 1-do-1 oraz ContentType dla pól generycznych
+        qs = qs.select_related(
             "top_image",
             "year_data",
             "field1_content_type",
@@ -167,24 +172,14 @@ class CalendarByIdView(generics.RetrieveAPIView):
             "bottom_content_type",
         )
 
+        # 3. prefetch_related
+        # Wystarczy podać nazwy pól. Django automatycznie sprawdzi ContentType
+        # i pobierze odpowiednie obiekty (CalendarMonthFieldText LUB CalendarMonthFieldImage)
         qs = qs.prefetch_related(
-            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
-            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
-            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
-        )
-
-        qs = qs.prefetch_related(
-            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
-            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
-            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
-        )
-
-        qs = qs.prefetch_related(
-            Prefetch(
-                "imageforfield_set",
-                queryset=ImageForField.objects.filter(user=user),
-                to_attr="prefetched_images_for_fields",
-            )
+            "field1",
+            "field2",
+            "field3",
+            "bottom"  # To obsłuży BottomImage, BottomColor i BottomGradient
         )
 
         return qs
@@ -195,9 +190,11 @@ class CalendarCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     pagination_class = CalendarPagination 
 
-
     def get_queryset(self):
-        # select_related dla zwykłych FK/OneToOne
+        # 1. select_related
+        # Pobieramy "sztywne" relacje oraz ContentType dla pól generycznych.
+        # Pobranie *_content_type tutaj zapobiega dodatkowym zapytaniom SQL,
+        # gdy Django będzie sprawdzać, z jakiej tabeli pobrać field1, field2 itd.
         qs = Calendar.objects.filter(author=self.request.user).select_related(
             "top_image",
             "year_data",
@@ -207,57 +204,23 @@ class CalendarCreateView(generics.ListCreateAPIView):
             "bottom_content_type",
         ).order_by("-created_at")
 
-        # prefetch dla GenericForeignKey
-        # field1
-        field1_qs = CalendarMonthFieldText.objects.all()  # lub inny model, zależnie od typu
+        # 2. prefetch_related
+        # Usuwamy ImageForField, bo już go nie ma.
+        # Usuwamy ręczne obiekty Prefetch z hardcodowanymi typami (np. field1 jako Text).
+        #
+        # Podając po prostu nazwy pól GenericForeignKey ("field1", "field2" itd.),
+        # Django automatycznie:
+        # a) Zbierze ID i ContentType dla każdego wiersza.
+        # b) Zrobi jedno zapytanie do tabeli Text (dla rekordów tekstowych).
+        # c) Zrobi jedno zapytanie do tabeli Image (dla rekordów obrazkowych).
+        # d) "Sklei" to w Pythonie.
+        
         qs = qs.prefetch_related(
-            Prefetch(
-                "field1",
-                queryset=field1_qs,
-                to_attr="prefetched_field1"
-            )
+            "field1",
+            "field2",
+            "field3",
+            "bottom"  # To obsłuży automatycznie BottomImage, BottomColor, BottomGradient
         )
-
-        # field2
-        field2_qs = CalendarMonthFieldImage.objects.all()
-        qs = qs.prefetch_related(
-            Prefetch(
-                "field2",
-                queryset=field2_qs,
-                to_attr="prefetched_field2"
-            )
-        )
-
-        # field3
-        field3_qs = CalendarMonthFieldText.objects.all()
-        qs = qs.prefetch_related(
-            Prefetch(
-                "field3",
-                queryset=field3_qs,
-                to_attr="prefetched_field3"
-            )
-        )
-
-        # bottom (może być BottomImage, BottomColor lub BottomGradient)
-        bottom_models = [BottomImage, BottomColor, BottomGradient]
-        for model in bottom_models:
-            qs = qs.prefetch_related(
-                Prefetch(
-                    "bottom",
-                    queryset=model.objects.all(),
-                    to_attr=f"prefetched_bottom_{model.__name__}"
-                )
-            )
-
-
-        image_for_field_qs = ImageForField.objects.filter(user=self.request.user)
-        qs = qs.prefetch_related(
-                Prefetch(
-                    "imageforfield_set",  # reverse relacja z Calendar → ImageForField
-                    queryset=image_for_field_qs,
-                    to_attr="prefetched_images_for_fields"
-                )
-            )
 
         return qs
 
@@ -268,7 +231,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
         image_from_disk = data.get("imageFromDisk", "false").lower() == "true"
 
         top_image_value = serializer.validated_data.get("top_image")
-        
 
         if image_from_disk:
             if image_from_disk:
@@ -358,71 +320,76 @@ class CalendarCreateView(generics.ListCreateAPIView):
             bottom_content_type=bottom_ct,
             bottom_object_id=bottom_instance.id if bottom_instance else None,
         )
-
+            
         # --- 4. Obsługa field1/2/3 ---
         for i in range(1, 4):
             field_key = f"field{i}"
-            items = data.getlist(field_key) if hasattr(data, "getlist") else data.get(field_key, [])
-            for item in items:
-                if isinstance(item, str):
+            file_key = f"field{i}_image"
+            
+            # 1. Pobieramy metadane (JSON) o ułożeniu/treści
+            # Zakładamy, że dla jednego pola przychodzi jeden główny obiekt konfiguracji
+            raw_data = data.get(field_key)
+            item_data = {}
+
+            # Parsowanie JSON (jeśli to string)
+            if raw_data:
+                if isinstance(raw_data, str):
                     try:
-                        item = json.loads(item)  # bo FormData w axios może wysłać jako string
-                    except Exception:
-                        continue
+                        item_data = json.loads(raw_data)
+                    except ValueError:
+                        item_data = {}
+                elif isinstance(raw_data, dict):
+                    item_data = raw_data
 
-                if "text" in item:
-                    field_obj = CalendarMonthFieldText.objects.create(
-                        author=user,
-                        text=item["text"],
-                        font=item.get("font", {}).get("fontFamily"),
-                        weight=item.get("font", {}).get("fontWeight"),
-                        color=item.get("font", {}).get("fontColor"),
-                        size =item.get("font", {}).get("fontSize"),
-                       
-                    )
-                elif "image" in item:
-                    field_obj = CalendarMonthFieldImage.objects.create(
-                        author=user,
-                        path=item["image"],
-                        size=item.get("scale"),
-                        positionX=item.get("positionX"),
-                        positionY=item.get("positionY"),
-                    )
-                else:
-                    continue
+            # 2. Obsługa obrazka (Upload pliku LUB ścieżka z JSON)
+            uploaded_file = self.request.FILES.get(file_key)
+            final_image_path = item_data.get("image")  # Domyślnie to, co przyszło w JSON (np. obrazek z galerii)
 
+            # Jeśli użytkownik wgrał nowy plik, ma on priorytet i nadpisuje path
+            if uploaded_file:
+                file_bytes = uploaded_file.read()
+                filename = f"generated_{uuid.uuid4().hex}.png"
+                
+                # Uploadujemy TUTAJ, zanim stworzymy obiekt w bazie
+                generated_url = upload_image(
+                    file_bytes,
+                    "generated_images",
+                    filename
+                )
+                final_image_path = generated_url
+
+            # 3. Tworzenie odpowiedniego obiektu (Tekst lub Obraz)
+            field_obj = None
+
+            # Przypadek A: To jest tekst
+            if "text" in item_data and not uploaded_file: # file ma priorytet bycia obrazkiem
+                field_obj = CalendarMonthFieldText.objects.create(
+                    author=user,
+                    text=item_data["text"],
+                    font=item_data.get("font", {}).get("fontFamily"),
+                    weight=item_data.get("font", {}).get("fontWeight"),
+                    color=item_data.get("font", {}).get("fontColor"),
+                    size=item_data.get("font", {}).get("fontSize"),
+                )
+
+            # Przypadek B: To jest obrazek (z uploadu lub z JSONa)
+            elif final_image_path:
+                field_obj = CalendarMonthFieldImage.objects.create(
+                    author=user,
+                    path=final_image_path,  # Tutaj trafia URL z uploadu lub z JSON
+                    size=item_data.get("scale"),
+                    positionX=item_data.get("positionX"),
+                    positionY=item_data.get("positionY"),
+                )
+
+            # 4. Podpięcie pod Kalendarz (GenericForeignKey)
+            if field_obj:
                 ct = ContentType.objects.get_for_model(field_obj)
+                
+                # Ustawiamy content_type i object_id dynamicznie dla danego pola (field1/2/3)
                 setattr(calendar, f"{field_key}_content_type", ct)
                 setattr(calendar, f"{field_key}_object_id", field_obj.id)
                 calendar.save()
-
-
-        for i in range(1, 4): 
-            raw = data.get(f"field{i}")  # bierzemy pierwszy element listy
-            try:
-                field_dict = json.loads(raw)       # zamiana stringa JSON na dict
-            except json.JSONDecodeError:
-                field_dict = {}
-            image_is_true = field_dict.get("image", "false").lower() == "true"
-            if image_is_true:
-                # zakładam, że w request.FILES masz plik o kluczu np. "field1_image"
-                
-                file_obj = self.request.FILES.get(f"field{i}_image")  # <- FILES, nie data
-                if file_obj:
-                    file_bytes = file_obj.read()  # to są już bajty
-                    filename = f"generated_{uuid.uuid4().hex}.png"
-                    generated_url = upload_image(
-                        file_bytes,   # używamy bytes, nie read() na bytes
-                        "generated_images",
-                        filename
-                    )
-                    
-                    ImageForField.objects.create(
-                    user=self.request.user,
-                    calendar=calendar,       # Twój obiekt Calendar, który został zapisany wcześniej
-                    field_number=i,
-                    url=generated_url
-                )
 
 class CalendarSearchBarView(generics.ListAPIView):
     serializer_class = CalendarSearchSerializer
@@ -435,12 +402,14 @@ class CalendarSearchBarView(generics.ListAPIView):
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
+    
 class CalendarPrint(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         try:
            
             calendar_id = request.data.get("id_kalendarz")
+            production_id = request.data.get("id_production")
             if not calendar_id:
                 return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)
 
@@ -505,7 +474,26 @@ class CalendarPrint(generics.CreateAPIView):
                 process_top_image_with_year(upscaled_path, data)
                 
             # 8. Nanoszenie fileds na bottom 
-            process_calendar_bottom(data,upscaled_path)
+            process_calendar_bottom(data,upscaled_path,production_id )
+
+            # ✅ 9. AKTUALIZACJA STATUSU ZAMÓWIENIA
+            try:
+                # Pobieramy obiekt produkcji na podstawie przekazanego ID
+                production = CalendarProduction.objects.get(id=production_id)
+                
+                # Aktualizujemy status i notatkę (opcjonalnie)
+                production.status = "done"
+                production.production_note = "Plik CMYK wygenerowany automatycznie."
+                
+                # Ustawiamy datę zakończenia (tak jak masz w serializerze)
+                production.finished_at = timezone.now()
+                
+                # Zapisujemy zmiany w bazie danych
+                production.save()
+                print(f"✅ Status produkcji {production_id} zmieniony na 'done'")
+                
+            except CalendarProduction.DoesNotExist:
+                print(f"⚠️ Nie znaleziono produkcji o ID {production_id} do aktualizacji statusu.")
 
             return Response({
                 "message": "Dane kalendarza zostały przetworzone, a obraz wgrany do Cloudinary.",
@@ -588,15 +576,21 @@ class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
         # automatycznie zaktualizuje updated_at dzięki auto_now=True w modelu
         serializer.save()
 
-
 class CalendarByIdStaffView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
-    permission_classes = [IsAuthenticated]
-    lookup_url_kwarg = "pk"   # domyślnie może być też 'pk'
+    # Jeśli to widok dla obsługi, warto rozważyć IsAdminUser, 
+    # ale zostawiam IsAuthenticated zgodnie z Twoim kodem.
+    permission_classes = [IsAuthenticated] 
+    lookup_field = "pk"
 
     def get_queryset(self):
-      
-        qs = Calendar.objects.select_related(
+        # 1. Pobieramy wszystkie kalendarze (zakładamy, że staff może widzieć wszystko)
+        qs = Calendar.objects.all()
+
+        # 2. select_related
+        # Optymalizacja zapytań SQL dla kluczy obcych i typów zawartości.
+        # Pobranie *_content_type jest kluczowe dla wydajności GenericForeignKey.
+        qs = qs.select_related(
             "top_image",
             "year_data",
             "field1_content_type",
@@ -605,24 +599,41 @@ class CalendarByIdStaffView(generics.RetrieveAPIView):
             "bottom_content_type",
         )
 
+        # 3. prefetch_related
+        # Usuwamy ręczne definiowanie querysetów (np. wymuszanie Text dla field1).
+        # Podając same nazwy pól, Django automatycznie sprawdzi, czy w danym wierszu
+        # jest Tekst czy Obrazek i pobierze odpowiedni obiekt.
+        # To samo dotyczy pola 'bottom' (Image/Color/Gradient).
         qs = qs.prefetch_related(
-            Prefetch("field1", queryset=CalendarMonthFieldText.objects.all()),
-            Prefetch("field2", queryset=CalendarMonthFieldImage.objects.all()),
-            Prefetch("field3", queryset=CalendarMonthFieldText.objects.all()),
+            "field1",
+            "field2",
+            "field3",
+            "bottom"
         )
-
-        qs = qs.prefetch_related(
-            Prefetch("bottom", queryset=BottomImage.objects.all(), to_attr="bottom_images"),
-            Prefetch("bottom", queryset=BottomColor.objects.all(), to_attr="bottom_colors"),
-            Prefetch("bottom", queryset=BottomGradient.objects.all(), to_attr="bottom_gradients"),
-        )
-
-        qs = qs.prefetch_related(
-            Prefetch(
-                "imageforfield_set",
-               queryset=ImageForField.objects.all(),
-                to_attr="prefetched_images_for_fields",
-            )
-        )
+        
+        # Usunięto: imageforfield_set (model nie istnieje)
 
         return qs
+    
+from django.http import FileResponse, Http404
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, IsAdminUser,AllowAny
+# views.py
+class DownloadCalendarStaffView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]  # lub IsAuthenticated, jeśli chcesz ograniczyć do zalogowanych użytkowników
+
+    def get(self, request, pk, format=None):
+        export_dir = os.path.join(settings.MEDIA_ROOT, 'calendar_exports')
+        filename = f"final_calendar_{pk}_CMYK.jpg"
+        file_path = os.path.normpath(os.path.join(export_dir, filename))
+
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            file_handle = open(file_path, 'rb')
+            response = FileResponse(file_handle, content_type='image/jpeg')
+            
+            # Ważne nagłówki dla przeglądarki
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+            return response
+        
+        raise Http404(f"Nie znaleziono pliku: {filename}")

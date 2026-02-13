@@ -3,7 +3,7 @@ import os
 import requests
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from ..models import Calendar, CalendarYearData, GeneratedImage,  ImageForField 
+from ..models import Calendar, CalendarYearData, GeneratedImage
 from .utils import hex_to_rgb, get_font_path
 import math
 import time
@@ -13,16 +13,32 @@ from io import BytesIO
 
 def fetch_calendar_data(calendar_id):
     """
-    Pobiera obiekt Calendar wraz z powiązanymi danymi i obrazami 
-    do prefetched_images_for_fields.
+    Pobiera obiekt Calendar wraz z powiązanymi polami (GenericForeignKey).
+    Django automatycznie pobierze odpowiednie modele (Text lub Image) dla field1/2/3
+    oraz odpowiedni model dla stopki (Image, Color, Gradient).
     """
-    qs = Calendar.objects.filter(id=calendar_id).prefetch_related(
-        Prefetch(
-            "imageforfield_set",
-            queryset=ImageForField.objects.all(),
-            to_attr="prefetched_images_for_fields"
-        )
+    qs = Calendar.objects.filter(id=calendar_id)
+    
+    # 1. Optymalizacja SQL (select_related)
+    # Pobieramy ContentType, aby Django wiedziało, w jakich tabelach szukać danych
+    qs = qs.select_related(
+        "top_image",
+        "year_data",
+        "field1_content_type",
+        "field2_content_type",
+        "field3_content_type",
+        "bottom_content_type",
     )
+
+    # 2. Pobieranie danych (prefetch_related)
+    # Django automatycznie obsłuży polimorfizm (czy to Text, czy Image)
+    qs = qs.prefetch_related(
+        "field1",
+        "field2",
+        "field3",
+        "bottom"
+    )
+
     return qs.first()
 
 def get_year_data(calendar):
@@ -41,59 +57,73 @@ def get_year_data(calendar):
                 "positionY": year_data_obj.positionY,
             }
     return year_data
+import os
+import requests
 
 def handle_field_data(field_obj, field_number, export_dir):
     """
-    Zwraca dane pola obrazkowego lub tekstowego. Jeśli jest to obraz 
-    z zewnętrznym URL, pobiera i zapisuje plik.
+    Przetwarza obiekt pola (Tekst lub Obraz).
+    Dla obrazów: pobiera plik z URL/Path jeśli podano export_dir.
+    Dla tekstu: zwraca parametry formatowania.
     """
     if not field_obj:
         return None
 
-    # Pole tekstowe (lub z pozycją/rozmiarem bez URL)
-    if hasattr(field_obj, "positionX") and hasattr(field_obj, "size") and not hasattr(field_obj, "url"):
-        return {
-            "field_number": field_number,
-            "positionX": getattr(field_obj, "positionX", None),
-            "positionY": getattr(field_obj, "positionY", None),
-            "size": getattr(field_obj, "size", None),
-        }
-    
-    # Pole obrazkowe z URL
-    if hasattr(field_obj, "url"):
-        image_url = getattr(field_obj, "path", None) or getattr(field_obj, "url", None)
-        if image_url:
-            # W oryginalnym kodzie, pobieranie jest tylko jeśli jest export_dir, co sugeruje, 
-            # że ścieżki względne są używane tylko dla eksportu.
-            # Jeśli eksport_dir jest dostarczony, próbujemy pobrać i zapisać:
-            if export_dir:
-                try:
-                    response = requests.get(image_url, stream=True)
-                    if response.status_code == 200:
-                        filename = f"field{field_number}_{os.path.basename(image_url)}"
-                        dest = os.path.join(export_dir, filename)
-                        with open(dest, "wb") as f:
-                            for chunk in response.iter_content(1024):
-                                f.write(chunk)
-                        return {
-                            "field_number": field_obj.field_number,
-                            "image_url": dest
-                        }
-                    else:
-                         print(f"Error downloading field{field_number}: HTTP {response.status_code}")
-                         return {"field_number": field_number, "image_url": image_url} # Zwróć URL, jeśli pobieranie się nie powiodło
-                except Exception as e:
-                    print(f"Error downloading field{field_number}: {e}")
-                    return {"field_number": field_number, "image_url": image_url} # Zwróć URL w razie błędu
+    # --- PRZYPADEK 1: OBRAZEK ---
+    # Sprawdzamy czy obiekt ma atrybut 'path' (Twoja nowa nazwa) lub 'url' (stara nazwa)
+    image_source = getattr(field_obj, "path", None) or getattr(field_obj, "url", None)
 
-    # Jeśli pole ma tekst (bez względu na to, czy to TextForField czy inny obiekt)
+    if image_source:
+        # Przygotowujemy podstawowy słownik zwrotny z geometrią
+        result = {
+            "field_number": field_number,  # Używamy argumentu funkcji, nie atrybutu obiektu
+            "type": "image",
+            "image_url": image_source,     # Domyślnie URL/Path z bazy
+            "positionX": getattr(field_obj, "positionX", 0),
+            "positionY": getattr(field_obj, "positionY", 0),
+            "size": getattr(field_obj, "size", 1.0),
+        }
+
+        # Logika pobierania pliku (tylko jeśli mamy export_dir i jest to link http)
+        if export_dir and image_source.startswith(("http://", "https://")):
+            try:
+                # Wyciągamy bezpieczną nazwę pliku
+                # np. field1_obrazek.png
+                original_name = os.path.basename(image_source.split("?")[0]) # split usuwa query params
+                if not original_name: original_name = "image.png"
+                
+                filename = f"field{field_number}_{original_name}"
+                dest_path = os.path.join(export_dir, filename)
+
+                # Pobieranie
+                response = requests.get(image_source, stream=True, timeout=10)
+                if response.status_code == 200:
+                    with open(dest_path, "wb") as f:
+                        for chunk in response.iter_content(1024):
+                            f.write(chunk)
+                    
+                    # Nadpisujemy URL ścieżką lokalną
+                    result["image_url"] = dest_path
+                else:
+                    print(f"⚠️ Błąd pobierania pola {field_number}: HTTP {response.status_code}")
+            
+            except Exception as e:
+                print(f"⚠️ Wyjątek przy pobieraniu pola {field_number}: {e}")
+                # W razie błędu result['image_url'] pozostaje oryginalnym URL-em
+
+        return result
+
+    # --- PRZYPADEK 2: TEKST ---
+    # Jeśli ma atrybut 'text' i nie jest pusty
     if hasattr(field_obj, "text") and field_obj.text:
         return {
+            "field_number": field_number,
+            "type": "text",
             "text": field_obj.text,
-            "font": getattr(field_obj, "font", None),
-            "weight": getattr(field_obj, "weight", None),
-            "size": getattr(field_obj, "size", None),
-            "color": getattr(field_obj, "color", None),
+            "font": getattr(field_obj, "font", "Arial"),
+            "weight": getattr(field_obj, "weight", "normal"),
+            "size": getattr(field_obj, "size", 200),
+            "color": getattr(field_obj, "color", "#000000"),
         }
 
     return None
@@ -448,10 +478,7 @@ def process_top_image_with_year(top_image_path, data):
         return None, top_image_path
 
 
-
-
-
-def process_calendar_bottom(data, upscaled_top_path=None):
+def process_calendar_bottom(data, upscaled_top_path=None,production_id=None):
     
     bottom_data = data.get("bottom", {})
     template_image_path = bottom_data.get("image_path")
@@ -527,6 +554,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         # =========================================================
         # 3. SEGMENTY (Bez zmian)
         # =========================================================
+        print(f"🔍 Dane dla pól: {data}")
         raw_fields = data.get("fields", {})
 
         for i in range(1, 4):
@@ -560,6 +588,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
             scale = 1.0; pos_x = 0; pos_y = 0
 
             if config:
+                # 1. Parsowanie rozmiaru i pozycji
                 try: scale = float(config.get("size", 1.0))
                 except: scale = 1.0
                 try: pos_x = int(float(config.get("positionX", 0)))
@@ -567,21 +596,66 @@ def process_calendar_bottom(data, upscaled_top_path=None):
                 try: pos_y = int(float(config.get("positionY", 0)))
                 except: pos_y = 0
 
+                # 2. Obsługa TEKSTU
                 if config.get("text"):
                     text = config["text"]
-                    f_size = int(config.get("size", 200))
+                    
+                    # Rozmiar fontu (domyślnie z configu lub 200)
+                    # Uwaga: w Twoim configu 'size' dla tekstu to font size, dla obrazka to skala.
+                    # Zakładam tutaj, że dla tekstu size to wielkość czcionki.
+                    try: f_size = int(float(config.get("size", 200)))
+                    except: f_size = 200
+
+                    # Ładowanie fontu
                     try: font_ad = ImageFont.truetype("arial.ttf", f_size)
                     except: font_ad = ImageFont.load_default()
+
+                    # Kolor
+                    text_color = config.get("color", "#333")
+
+                    # --- 3. LOGIKA POGRUBIANIA (EXTRA BOLD) ---
+                    # Sprawdzamy czy w configu jest bold
+                    weight_val = config.get("weight") or config.get("font", {}).get("fontWeight")
+                    is_bold = False
                     
-                    l, t, r, b = strip_draw.textbbox((0, 0), text, font=font_ad)
-                    text_w = r - l; text_h = b - t
+                    # Obsługa różnych formatów zapisu (string "bold", int 700, string "700")
+                    if weight_val:
+                        w_str = str(weight_val).lower()
+                        if "bold" in w_str or w_str in ["700", "800", "900"]:
+                            is_bold = True
+                        elif isinstance(weight_val, int) and weight_val >= 700:
+                            is_bold = True
+
+                    stroke_width = 0
+                    if is_bold:
+                        # Dzielnik 20 daje bardzo wyraźne pogrubienie (grubsze niż standardowe)
+                        # Im mniejszy dzielnik, tym grubszy tekst. Np. /15 będzie bardzo gruby.
+                        stroke_width = int(f_size / 40)
+                        if stroke_width < 1: stroke_width = 1
+
+                    # --- 4. CENTROWANIE I RYSOWANIE ---
+                    # Ważne: textbbox musi uwzględniać stroke_width, żeby centrowanie było poprawne!
+                    l, t, r, b = strip_draw.textbbox((0, 0), text, font=font_ad, stroke_width=stroke_width)
+                    text_w = r - l
+                    text_h = b - t
+                    
                     txt_x = (AD_CONTENT_WIDTH - text_w) / 2
                     txt_y = (H_AD_STRIP - text_h) / 2
-                    strip_draw.text((txt_x, txt_y), text, font=font_ad, fill=config.get("color", "#333"))
+                    
+                    strip_draw.text(
+                        (txt_x, txt_y), 
+                        text, 
+                        font=font_ad, 
+                        fill=text_color,
+                        stroke_width=stroke_width,  # <-- To robi pogrubienie
+                        stroke_fill=text_color      # Obrys w tym samym kolorze co tekst
+                    )
 
             # C. OBRAZKI DODATKOWE
             for key, val in raw_fields.items():
                 if not isinstance(val, dict): continue
+
+
                 if str(val.get("field_number")) == str(i) and val.get("image_url"):
                     img_source = val.get("image_url")
                     overlay = None
@@ -611,7 +685,7 @@ def process_calendar_bottom(data, upscaled_top_path=None):
         base_img = base_img.convert("CMYK")
         
         # Opcjonalnie: Zmiana nazwy pliku, aby wiedzieć, że to wersja do druku
-        output_filename = f"final_calendar_{timestamp}_CMYK.jpg"
+        output_filename = f"final_calendar_{production_id}_CMYK.jpg"
         output_path = os.path.join(base_export_dir, output_filename)
 
         # Zapis - JPG obsługuje CMYK, ale nie wszystkie przeglądarki obrazów wyświetlą to poprawnie na ekranie.

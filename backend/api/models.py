@@ -91,7 +91,7 @@ class CalendarProduction(models.Model):
     quantity = models.PositiveIntegerField(default=1)  # ilość egzemplarzy
     deadline = models.DateField(null=True, blank=True)  # termin produkcji
     production_note = models.TextField(blank=True)
-
+    
     # kiedy faktycznie zakończono
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -128,13 +128,6 @@ class CalendarYearData(models.Model):
     color = models.CharField(max_length=7, blank=True, null=True)
     positionX = models.CharField(max_length=50, blank=True, null=True)
     positionY = models.CharField(max_length=50, blank=True, null=True)
-
-class ImageForField(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    calendar = models.ForeignKey(Calendar, on_delete=models.CASCADE)
-    field_number = models.IntegerField()
-    url = models.URLField()
-    created_at = models.DateTimeField(auto_now_add=True)
 
 class BottomImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)

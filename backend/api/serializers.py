@@ -249,11 +249,6 @@ class BottomGradientSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "author"]
 
 
-class ImageForFieldSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ImageForField
-        fields = ['id', 'user', 'calendar', 'field_number', 'url', 'created_at']
-        read_only_fields = ['id', 'user', 'created_at']
 
 class TopImageField(serializers.Field):
     """
