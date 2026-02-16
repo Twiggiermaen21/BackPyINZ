@@ -4,12 +4,57 @@ import requests
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from ..models import Calendar, CalendarYearData, GeneratedImage
-from .utils import hex_to_rgb, get_font_path
+from .utils import _save_as_psd, create_export_folder, hex_to_rgb, get_font_path, _load_font
 import math
 import time
 import shutil
 from io import BytesIO
+from psd_tools import PSDImage
+from psd_tools.api.layers import PixelLayer
 
+try:
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import PixelLayer
+    HAS_PSD = True
+except ImportError:
+    HAS_PSD = False
+
+# ==========================================================
+# STAŁE WYMIAROWE Z SZABLONU DRUKARNI (@ 300 DPI)
+# ==========================================================
+
+# --- GŁÓWKA ---
+HEADER_WIDTH = 3957       # 13.19 cali = 335 mm
+HEADER_HEIGHT = 2658      #  8.86 cali = 225 mm
+
+# --- PLECY ---
+BACKING_WIDTH = 3789      # 12.63 cali = 321 mm
+
+H_GLUE = 120              #  0.40 cali =  10 mm  (klejenie główki na górze)
+H_MONTH_BOX = 1650        #  5.50 cali = 140 mm  (kalendarium)
+H_BIG = 264               #  0.88 cali =  22 mm  (linia bigowania)
+H_AD_STRIP = 354          #  1.18 cali =  30 mm  (pasek reklamowy)
+H_BLEED_BOTTOM = 120      #  0.40 cali =  10 mm  (spad dolny)
+
+BOX_WIDTH = 3543           # 11.81 cali = 300 mm  (szer. kalendarium/reklamy)
+BOX_X = (BACKING_WIDTH - BOX_WIDTH) // 2   # 123 px (centrowanie)
+
+AD_PADDING_X = BOX_X
+AD_CONTENT_WIDTH = BOX_WIDTH
+
+# Łączna wysokość pleców
+BACKING_HEIGHT = (
+    H_GLUE
+    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 1
+    + H_BIG
+    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 2
+    + H_BIG
+    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 3
+    + H_BLEED_BOTTOM
+)  # = 7572 px = 641 mm
+
+
+MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
 
 def fetch_calendar_data(calendar_id):
     """
@@ -57,8 +102,6 @@ def get_year_data(calendar):
                 "positionY": year_data_obj.positionY,
             }
     return year_data
-import os
-import requests
 
 def handle_field_data(field_obj, field_number, export_dir):
     """
@@ -138,13 +181,6 @@ def handle_top_image(calendar, export_dir):
             
     return gen_img.url
 
-def hex_to_rgb(hex_color):
-    """Zamienia hex string na tuple RGB."""
-    if not isinstance(hex_color, str): return (255, 255, 255)
-    hex_color = hex_color.lstrip('#')
-    if len(hex_color) == 6:
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    return (255, 255, 255)
 
 def create_gradient_vertical(size, start_rgb, end_rgb):
     """Szybki gradient pionowy (resize 1px)."""
@@ -396,229 +432,171 @@ def handle_bottom_data(bottom_obj, export_dir):
 
     return None
 
-
-def process_top_image_with_year(top_image_path, data):
+def generate_header(top_image_path, data, export_dir, production_id=None):
     """
-    Rysuje rok z obsługą 'fake bold' i poprawnym ładowaniem
-    plików .ttf z folderu 'fonts/'.
+    Generuje plik główki kalendarza jako PSD.
+    Skaluje obraz do 3957×2658 px i opcjonalnie nakłada rok.
+
+    Returns:
+        str | None: ścieżka do zapisanego pliku
     """
     year_data = data.get("year_data") or data.get("year")
 
     if not top_image_path or not os.path.exists(top_image_path):
-        print("⚠️ Brak pliku obrazu.")
-        return None, None
+        print("⚠️ Brak pliku obrazu główki.")
+        return None
 
-    output_path = top_image_path.replace(".jpg", "_header_processed.jpg")
-    
+    output_path = os.path.join(export_dir, f"header_{production_id}.psd")
+
     try:
-        TARGET_WIDTH = 3661
-        TARGET_HEIGHT = 2480
-        
         with Image.open(top_image_path) as img:
             img = img.convert("RGBA")
-            img_fitted = ImageOps.fit(img, (TARGET_WIDTH, TARGET_HEIGHT), method=Image.Resampling.LANCZOS)
-            
+            img_fitted = ImageOps.fit(
+                img,
+                (HEADER_WIDTH, HEADER_HEIGHT),
+                method=Image.Resampling.LANCZOS,
+            )
+
             if year_data:
                 draw = ImageDraw.Draw(img_fitted)
-                # --- DANE ---
+
                 text_content = str(year_data.get("text", "2026"))
-                font_size = int(float(year_data.get("size", 400))) 
+                font_size = int(float(year_data.get("size", 400)))
                 pos_x = int(float(year_data.get("positionX", 50)))
                 pos_y = int(float(year_data.get("positionY", 50)))
                 text_color = year_data.get("color", "#FFFFFF")
-                
-                # Sprawdzamy czy ma być BOLD
+
                 weight_raw = str(year_data.get("weight", "normal")).lower()
                 is_bold = weight_raw in ["bold", "700", "800", "900", "bolder"]
-                
-                # --- 1. ŁADOWANIE CZCIONKI Z FOLDERU FONTS ---
-                # Pobieramy nazwę, np. "Arial" -> "arial"
+
                 font_name = str(year_data.get("font", "arial"))
-
                 font_path = get_font_path(font_name)
-                # Sprawdzamy, czy plik istnieje
-                if not os.path.exists(font_path):
-                    print(f"⚠️ Nie znaleziono pliku: {font_path}. Przełączam na fonts/arial.ttf")
-                    # Fallback na pewniaka (upewnij się, że masz fonts/arial.ttf)
-                  
+                font = _load_font(font_path, font_size)
 
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                except OSError:
-                    print(f"❌ Krytyczny błąd ładowania fontu {font_path}. Używam systemowego default.")
-                    font = ImageFont.load_default() 
-                
-                # --- 2. OBLICZANIE STROKE (Fake Bold) ---
-                if is_bold:
-                    # 3% wysokości fontu jako obrys
-                    stroke_w = int(font_size * 0.03)
-                    if stroke_w < 1: stroke_w = 1
-                else:
-                    stroke_w = 0
+                stroke_w = int(font_size * 0.03) if is_bold else 0
+                if is_bold and stroke_w < 1:
+                    stroke_w = 1
 
-                print(f"🖌️ Rysowanie: '{text_content}' | Font: {font_path} | Bold: {is_bold} (Stroke: {stroke_w}px)")
+                print(
+                    f"🖌️ Rok: '{text_content}' | Font: {font_path} "
+                    f"| Bold: {is_bold} (Stroke: {stroke_w}px)"
+                )
 
-                # --- 3. RYSOWANIE ---
                 draw.text(
                     (pos_x, pos_y),
                     text_content,
                     font=font,
                     fill=text_color,
                     stroke_width=stroke_w,
-                    stroke_fill=text_color
+                    stroke_fill=text_color,
                 )
 
-            # Zapis
-            img_fitted = img_fitted.convert("RGB")
-            img_fitted.save(output_path, quality=95, dpi=(300, 300))
-            return output_path, output_path
+            # Konwersja do RGB i zapis jako PSD
+            img_rgb = img_fitted.convert("RGB")
+            saved_path = _save_as_psd(img_rgb, output_path)
+
+            print(f"✅ Główka: {saved_path} ({HEADER_WIDTH}×{HEADER_HEIGHT} px = 335×225 mm)")
+            return saved_path
 
     except Exception as e:
-        print(f"❌ Błąd: {e}")
-        return None, top_image_path
+        print(f"❌ Błąd generowania główki: {e}")
+        return None
+def generate_backing(data, export_dir, production_id=None):
+    """
+    Generuje plik pleców kalendarza jako PSD.
 
-
-def process_calendar_bottom(data, upscaled_top_path=None,production_id=None):
-    
+    Returns:
+        str | None: ścieżka do zapisanego pliku
+    """
     bottom_data = data.get("bottom", {})
-    template_image_path = bottom_data.get("image_path")
+    template_image_path = bottom_data.get("image_path") if bottom_data else None
 
-    # --- 1. KONFIGURACJA ŚCIEŻKI ZAPISU ---
-    timestamp = int(time.time())
-    output_filename = f"final_calendar_{timestamp}.jpg"
-    base_export_dir = os.path.join(os.getcwd(), "media", "calendar_exports")
-    
-    if not os.path.exists(base_export_dir):
-        try: os.makedirs(base_export_dir)
-        except: base_export_dir = os.getcwd()
+    output_path = os.path.join(export_dir, f"backing_{production_id}.psd")
 
-    output_path = os.path.join(base_export_dir, output_filename)
-
-    # --- KONFIGURACJA WYMIARÓW ---
-    CANVAS_WIDTH = 3661
-    H_HEADER = 2480       
-    H_MONTH_BOX = 1594    
-    H_AD_STRIP = 768      
-    MARGIN_Y = 25         
-    
-    BOX_WIDTH = 3425
-    AD_PADDING_X = 112
-    AD_CONTENT_WIDTH = CANVAS_WIDTH - (2 * AD_PADDING_X)
-    BOX_X = (CANVAS_WIDTH - BOX_WIDTH) // 2 
-
-    H_SEGMENT = MARGIN_Y + H_MONTH_BOX + MARGIN_Y + H_AD_STRIP
-    TOTAL_HEIGHT = H_HEADER + (3 * H_SEGMENT)
-    
-    # 📌 NOWE: Obliczamy wysokość samego dołu (plecków), żeby tam wkleić tło
-    BACKING_HEIGHT = TOTAL_HEIGHT - H_HEADER
-
-    MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
-
-    print(f"ℹ️ Start generowania. Output: {output_path}")
+    print(
+        f"ℹ️ Plecy: {BACKING_WIDTH}×{BACKING_HEIGHT} px "
+        f"({BACKING_WIDTH/300*25.4:.0f}×{BACKING_HEIGHT/300*25.4:.0f} mm)"
+    )
 
     try:
-        # Tworzymy białe tło dla CAŁOŚCI (żeby pod główką było biało, jeśli tło nie sięga)
-        base_img = Image.new("RGB", (CANVAS_WIDTH, TOTAL_HEIGHT), "white")
-        
-        # =========================================================
-        # 1. TŁO (POPRAWIONE: TYLKO NA DÓŁ / PLECKI)
-        # =========================================================
+        base_img = Image.new("RGB", (BACKING_WIDTH, BACKING_HEIGHT), "white")
+
+        # --- TŁO ---
         if template_image_path and os.path.exists(template_image_path):
             with Image.open(template_image_path) as src_bg:
                 bg_layer = src_bg.convert("RGBA")
-                
-                # 📌 ZMIANA: Skalujemy tło tylko do wymiaru 'BACKING_HEIGHT' (same plecki), a nie całości.
-                # Dzięki temu zdjęcie nie jest rozciągnięte na główkę.
-                bg_layer = ImageOps.fit(bg_layer, (CANVAS_WIDTH, BACKING_HEIGHT), method=Image.Resampling.LANCZOS)
-                
-                # 📌 ZMIANA: Wklejamy przesunięte o H_HEADER w dół (pod główkę)
-                # (0, H_HEADER) oznacza: X=0, Y=2480px
-                base_img.paste(bg_layer, (0, H_HEADER))
-                print(f"🖼️ Tło wklejone od Y={H_HEADER} (Wysokość tła: {BACKING_HEIGHT}px)")
+                bg_layer = ImageOps.fit(
+                    bg_layer,
+                    (BACKING_WIDTH, BACKING_HEIGHT),
+                    method=Image.Resampling.LANCZOS,
+                )
+                base_img.paste(bg_layer, (0, 0))
+                print(f"🖼️ Tło pleców wklejone")
         else:
-            print("⚠️ Brak pliku tła, zostawiam białe.")
-        
+            print("⚠️ Brak tła pleców — białe tło.")
+
         draw = ImageDraw.Draw(base_img)
 
-        # =========================================================
-        # 2. GŁÓWKA (Bez zmian)
-        # =========================================================
-        if upscaled_top_path and os.path.exists(upscaled_top_path):
-            try:
-                header_img = Image.open(upscaled_top_path).convert("RGBA")
-                header_fitted = ImageOps.fit(header_img, (CANVAS_WIDTH, H_HEADER), method=Image.Resampling.LANCZOS)
-                base_img.paste(header_fitted, (0, 0), header_fitted)
-            except Exception as e:
-                print(f"⚠️ Błąd główki: {e}")
-
-        # =========================================================
-        # 3. SEGMENTY (Bez zmian)
-        # =========================================================
-        print(f"🔍 Dane dla pól: {data}")
+        # --- 3 SEGMENTY ---
         raw_fields = data.get("fields", {})
+        y = H_GLUE
 
         for i in range(1, 4):
-            prev_h = (i - 1) * H_SEGMENT
-            box_start_y = H_HEADER + prev_h + MARGIN_Y
-            strip_start_y = box_start_y + H_MONTH_BOX + MARGIN_Y
-            
-            # A. KALENDARIUM
-            box_coords = [(BOX_X, box_start_y), (BOX_X + BOX_WIDTH, box_start_y + H_MONTH_BOX)]
-            draw.rectangle(box_coords, fill="white", outline="#e5e7eb", width=5)
-            
-            month_name = MONTH_NAMES[i-1]
-            try: m_font = ImageFont.truetype("arial.ttf", 150)
-            except: m_font = ImageFont.load_default()
-            
-            center_x_box = BOX_X + (BOX_WIDTH / 2)
-            left, top, right, bottom = draw.textbbox((0, 0), month_name, font=m_font)
-            draw.text((center_x_box - ((right-left)/2), box_start_y + 40), month_name, font=m_font, fill="#1d4ed8")
-            
-            g_text = "[Siatka dni]"
-            try: g_font = ImageFont.truetype("arial.ttf", 100)
-            except: g_font = ImageFont.load_default()
-            gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
-            draw.text((center_x_box - ((gr-gl)/2), box_start_y + (H_MONTH_BOX - (gb-gt))/2 - gt), g_text, font=g_font, fill="#9ca3af")
+            cal_y = y
+            big1_y = cal_y + H_MONTH_BOX
+            ad_y = big1_y + H_BIG
+            next_y = ad_y + H_AD_STRIP + H_BIG
 
-            # B. PASEK REKLAMOWY
+            # KALENDARIUM
+            draw.rectangle(
+                [(BOX_X, cal_y), (BOX_X + BOX_WIDTH, cal_y + H_MONTH_BOX)],
+                fill="white", outline="#e5e7eb", width=5,
+            )
+
+            month_name = MONTH_NAMES[i - 1]
+            m_font = _load_font("arial.ttf", 150)
+            center_x = BOX_X + BOX_WIDTH / 2
+            l, t, r, b = draw.textbbox((0, 0), month_name, font=m_font)
+            draw.text(
+                (center_x - (r - l) / 2, cal_y + 40),
+                month_name, font=m_font, fill="#1d4ed8",
+            )
+
+            g_font = _load_font("arial.ttf", 100)
+            g_text = "[Siatka dni]"
+            gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
+            draw.text(
+                (center_x - (gr - gl) / 2, cal_y + (H_MONTH_BOX - (gb - gt)) / 2 - gt),
+                g_text, font=g_font, fill="#9ca3af",
+            )
+
+            # PASEK REKLAMOWY
             strip_img = Image.new("RGBA", (AD_CONTENT_WIDTH, H_AD_STRIP), (255, 255, 255, 0))
             strip_draw = ImageDraw.Draw(strip_img)
-            
+
             config = raw_fields.get(str(i)) or raw_fields.get(i)
-            scale = 1.0; pos_x = 0; pos_y = 0
+            scale = 1.0
+            pos_x = 0
+            pos_y = 0
 
             if config:
-                # 1. Parsowanie rozmiaru i pozycji
                 try: scale = float(config.get("size", 1.0))
-                except: scale = 1.0
+                except (ValueError, TypeError): scale = 1.0
                 try: pos_x = int(float(config.get("positionX", 0)))
-                except: pos_x = 0
+                except (ValueError, TypeError): pos_x = 0
                 try: pos_y = int(float(config.get("positionY", 0)))
-                except: pos_y = 0
+                except (ValueError, TypeError): pos_y = 0
 
-                # 2. Obsługa TEKSTU
                 if config.get("text"):
                     text = config["text"]
-                    
-                    # Rozmiar fontu (domyślnie z configu lub 200)
-                    # Uwaga: w Twoim configu 'size' dla tekstu to font size, dla obrazka to skala.
-                    # Zakładam tutaj, że dla tekstu size to wielkość czcionki.
                     try: f_size = int(float(config.get("size", 200)))
-                    except: f_size = 200
+                    except (ValueError, TypeError): f_size = 200
 
-                    # Ładowanie fontu
-                    try: font_ad = ImageFont.truetype("arial.ttf", f_size)
-                    except: font_ad = ImageFont.load_default()
-
-                    # Kolor
+                    font_ad = _load_font("arial.ttf", f_size)
                     text_color = config.get("color", "#333")
 
-                    # --- 3. LOGIKA POGRUBIANIA (EXTRA BOLD) ---
-                    # Sprawdzamy czy w configu jest bold
                     weight_val = config.get("weight") or config.get("font", {}).get("fontWeight")
                     is_bold = False
-                    
-                    # Obsługa różnych formatów zapisu (string "bold", int 700, string "700")
                     if weight_val:
                         w_str = str(weight_val).lower()
                         if "bold" in w_str or w_str in ["700", "800", "900"]:
@@ -626,90 +604,101 @@ def process_calendar_bottom(data, upscaled_top_path=None,production_id=None):
                         elif isinstance(weight_val, int) and weight_val >= 700:
                             is_bold = True
 
-                    stroke_width = 0
-                    if is_bold:
-                        # Dzielnik 20 daje bardzo wyraźne pogrubienie (grubsze niż standardowe)
-                        # Im mniejszy dzielnik, tym grubszy tekst. Np. /15 będzie bardzo gruby.
-                        stroke_width = int(f_size / 40)
-                        if stroke_width < 1: stroke_width = 1
+                    stroke_width = int(f_size / 40) if is_bold else 0
+                    if is_bold and stroke_width < 1:
+                        stroke_width = 1
 
-                    # --- 4. CENTROWANIE I RYSOWANIE ---
-                    # Ważne: textbbox musi uwzględniać stroke_width, żeby centrowanie było poprawne!
-                    l, t, r, b = strip_draw.textbbox((0, 0), text, font=font_ad, stroke_width=stroke_width)
-                    text_w = r - l
-                    text_h = b - t
-                    
-                    txt_x = (AD_CONTENT_WIDTH - text_w) / 2
-                    txt_y = (H_AD_STRIP - text_h) / 2
-                    
+                    tl, tt, tr, tb = strip_draw.textbbox(
+                        (0, 0), text, font=font_ad, stroke_width=stroke_width
+                    )
+                    txt_x = (AD_CONTENT_WIDTH - (tr - tl)) / 2
+                    txt_y = (H_AD_STRIP - (tb - tt)) / 2
                     strip_draw.text(
-                        (txt_x, txt_y), 
-                        text, 
-                        font=font_ad, 
-                        fill=text_color,
-                        stroke_width=stroke_width,  # <-- To robi pogrubienie
-                        stroke_fill=text_color      # Obrys w tym samym kolorze co tekst
+                        (txt_x, txt_y), text, font=font_ad,
+                        fill=text_color, stroke_width=stroke_width, stroke_fill=text_color,
                     )
 
-            # C. OBRAZKI DODATKOWE
+            # Obrazki w pasku
             for key, val in raw_fields.items():
-                if not isinstance(val, dict): continue
-
-
+                if not isinstance(val, dict):
+                    continue
                 if str(val.get("field_number")) == str(i) and val.get("image_url"):
                     img_source = val.get("image_url")
                     overlay = None
                     try:
                         if img_source.lower().startswith(("http://", "https://")):
-                            response = requests.get(img_source, timeout=10)
-                            if response.status_code == 200:
-                                overlay = Image.open(BytesIO(response.content)).convert("RGBA")
+                            resp = requests.get(img_source, timeout=10)
+                            if resp.status_code == 200:
+                                overlay = Image.open(BytesIO(resp.content)).convert("RGBA")
                         else:
                             local_path = os.path.normpath(img_source)
                             if os.path.exists(local_path):
                                 overlay = Image.open(local_path).convert("RGBA")
-                        
                         if overlay:
-                            new_w = int(overlay.width * scale); new_h = int(overlay.height * scale)
-                            if new_w < 1: new_w = 1; 
-                            if new_h < 1: new_h = 1
+                            new_w = max(1, int(overlay.width * scale))
+                            new_h = max(1, int(overlay.height * scale))
                             overlay = overlay.resize((new_w, new_h), Image.Resampling.LANCZOS)
                             strip_img.paste(overlay, (pos_x, pos_y), overlay)
                     except Exception as e:
-                        print(f"⚠️ Błąd img: {e}")
+                        print(f"⚠️ Img segment {i}: {e}")
 
-            base_img.paste(strip_img, (AD_PADDING_X, strip_start_y), strip_img)
+            base_img.paste(strip_img, (AD_PADDING_X, ad_y), strip_img)
+            y = next_y
 
-        # 4. ZAPIS
-        # Konwersja na CMYK
-        base_img = base_img.convert("CMYK")
-        
-        # Opcjonalnie: Zmiana nazwy pliku, aby wiedzieć, że to wersja do druku
-        output_filename = f"final_calendar_{production_id}_CMYK.jpg"
-        output_path = os.path.join(base_export_dir, output_filename)
+        # --- ZAPIS JAKO PSD ---
+        saved_path = _save_as_psd(base_img, output_path)
+        print(f"✅ Plecy: {saved_path} ({BACKING_WIDTH}×{BACKING_HEIGHT} px = 321×641 mm)")
 
-        # Zapis - JPG obsługuje CMYK, ale nie wszystkie przeglądarki obrazów wyświetlą to poprawnie na ekranie.
-        # Drukarnia jednak sobie z tym poradzi.
-        base_img.save(output_path, format="JPEG", dpi=(300, 300), quality=95, subsampling=0)
-        
-        # ALTERNATYWA: Często drukarnie wolą format TIFF lub PDF dla CMYK
-        # output_path_tiff = output_path.replace(".jpg", ".tiff")
-        # base_img.save(output_path_tiff, format="TIFF", dpi=(300, 300), compression="tiff_lzw")
-        
-        print(f"✅ Sukces: Plik CMYK zapisany w {output_path}")
-
-        # 5. CLEANUP
+        # Cleanup tła
         if template_image_path:
-            temp_dir_to_delete = os.path.dirname(os.path.normpath(template_image_path))
-            if os.path.abspath(temp_dir_to_delete) != os.path.abspath(base_export_dir):
-                if os.path.exists(temp_dir_to_delete):
-                    try: shutil.rmtree(temp_dir_to_delete)
-                    except: pass
+            temp_dir = os.path.dirname(os.path.normpath(template_image_path))
+            if os.path.abspath(temp_dir) != os.path.abspath(export_dir):
+                if os.path.exists(temp_dir):
+                    try: shutil.rmtree(temp_dir)
+                    except OSError: pass
 
-        return output_path
+        return saved_path
 
     except Exception as e:
-        print(f"❌ Krytyczny błąd: {e}")
+        print(f"❌ Błąd pleców: {e}")
         import traceback
         traceback.print_exc()
         return None
+
+
+def generate_calendar(data, top_image_path=None, upscaled_top_path=None, production_id=None):
+    """
+    Generuje kalendarz trójdzielny jako DWA osobne pliki PSD
+    w folderze: calendar_{production_id}_{kod}/
+
+    Pliki:
+      header_{id}.psd   — główka  3957 × 2658 px (335 × 225 mm)
+      backing_{id}.psd  — plecy   3789 × 7572 px (321 × 641 mm)
+
+    Returns:
+        dict: {"header": ścieżka, "backing": ścieżka, "export_dir": folder}
+    """
+    # 1. Tworzenie folderu eksportu
+    export_dir = create_export_folder(production_id)
+
+    result = {"header": None, "backing": None, "export_dir": export_dir}
+
+    # 2. Główka
+    header_source = upscaled_top_path or top_image_path
+    if header_source:
+        result["header"] = generate_header(header_source, data, export_dir, production_id)
+    else:
+        print("⚠️ Brak obrazu na główkę — pomijam.")
+
+    # 3. Plecy
+    result["backing"] = generate_backing(data, export_dir, production_id)
+
+    # Podsumowanie
+    print("\n" + "=" * 50)
+    print(f"📋 KALENDARZ #{production_id}")
+    print(f"   📁 Folder:  {export_dir}")
+    print(f"   🖼️ Główka:  {result['header'] or '❌'}")
+    print(f"   📄 Plecy:   {result['backing'] or '❌'}")
+    print("=" * 50)
+
+    return result

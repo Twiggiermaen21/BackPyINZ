@@ -1,3 +1,4 @@
+import shutil
 import uuid
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch
@@ -12,13 +13,12 @@ from rest_framework import generics, status, response, permissions
 from django.conf import settings
 import os
 from ..utils.services import (
-    fetch_calendar_data, 
+    fetch_calendar_data,
+    generate_calendar, 
     get_year_data, 
     handle_field_data, 
     handle_bottom_data,
-    handle_top_image,
-    process_top_image_with_year,
-      process_calendar_bottom)
+    handle_top_image)
 from ..utils.upscaling import upscale_image_with_bigjpg
 
 
@@ -402,29 +402,25 @@ class CalendarSearchBarView(generics.ListAPIView):
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
-    
 class CalendarPrint(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         try:
-           
             calendar_id = request.data.get("id_kalendarz")
             production_id = request.data.get("id_production")
             if not calendar_id:
-                return Response({"error": "Brak id_kalendarz w danych żądania"}, status=400)
+                return Response({"error": "Brak id_kalendarz"}, status=400)
 
-            # 1. Pobieranie danych kalendarza
+            # 1. Pobranie kalendarza z bazy
             calendar = fetch_calendar_data(calendar_id)
             if not calendar:
-                return Response({"error": f"Nie znaleziono kalendarza o id {calendar_id}"}, status=404)
+                return Response({"error": f"Nie znaleziono kalendarza {calendar_id}"}, status=404)
 
-            # 2. Tworzenie katalogu eksportu
-            export_dir = os.path.join(settings.MEDIA_ROOT, "calendar_exports", str(uuid.uuid4()))
-            os.makedirs(export_dir, exist_ok=True)
-            print(f"📁 Utworzono katalog eksportu: {export_dir}")
+            # 2. Folder tymczasowy na pobrane pliki (upscaling itp.)
+            temp_dir = os.path.join(settings.MEDIA_ROOT, "calendar_temp", str(uuid.uuid4()))
+            os.makedirs(temp_dir, exist_ok=True)
 
-
-            # 3. Przygotowanie struktury danych JSON
+            # 3. Przygotowanie danych
             data = {
                 "calendar_id": calendar.id,
                 "author": str(calendar.author),
@@ -432,78 +428,73 @@ class CalendarPrint(generics.CreateAPIView):
                 "fields": {},
                 "bottom": None,
                 "top_image": None,
-                "year": get_year_data(calendar), # Pobieranie danych roku
+                "year": get_year_data(calendar),
             }
 
-            # 4. Obsługa Top Image (pobieranie lokalne, jeśli ma być naniesiony rok)
-            # data["top_image"] będzie albo URL, albo lokalną ścieżką
-            data["top_image"] = handle_top_image(calendar, export_dir)
+            data["top_image"] = handle_top_image(calendar, temp_dir)
+            data["bottom"] = handle_bottom_data(calendar.bottom, temp_dir)
 
-
-            # 5. Obsługa Bottom (obraz, kolor, gradient)
-            data["bottom"] = handle_bottom_data(calendar.bottom, export_dir)
-            # 6. Obsługa pól (Field1-3 + prefetched)
+            # Pola reklamowe
             all_fields = []
             for i in range(1, 4):
-                all_fields.append((getattr(calendar, f"field{i}", None), i)) 
-            
+                all_fields.append((getattr(calendar, f"field{i}", None), i))
             for img in getattr(calendar, "prefetched_images_for_fields", []):
                 all_fields.append((img, f"prefetched_image_{img.id}"))
-
             for field_obj, field_name in all_fields:
-                data["fields"][field_name] = handle_field_data(field_obj, field_name, export_dir)
+                data["fields"][field_name] = handle_field_data(field_obj, field_name, temp_dir)
 
+            # 4. Upscaling główki
+            upscaled_header_path = None
+            if data["top_image"]:
+                result = upscale_image_with_bigjpg(data["top_image"], temp_dir)
+                upscaled_header_path = result["local_upscaled"]
 
-            # 8. Zapis JSON
-            json_path = os.path.join(export_dir, "data.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-
-            with open(json_path, "r", encoding="utf-8") as f:
-                loaded_data = json.load(f)
-            
-            if (loaded_data["top_image"] ):
-                result = upscale_image_with_bigjpg(loaded_data["top_image"],export_dir)
-                upscaled_path = result["local_upscaled"]
-               
-            if (loaded_data["bottom"]['type'] == 'image' ):
-                result = upscale_image_with_bigjpg(loaded_data["bottom"]["url"],export_dir)
+            # 5. Upscaling tła pleców (jeśli obraz)
+            if data["bottom"] and data["bottom"].get("type") == "image":
+                result = upscale_image_with_bigjpg(data["bottom"]["url"], temp_dir)
                 data["bottom"]["image_path"] = result["local_upscaled"]
-            # 7. Rysowanie tekstu roku na Top Image i upload do Cloudinary
-            if data["top_image"] and data.get("year") is not None:
-                process_top_image_with_year(upscaled_path, data)
-                
-            # 8. Nanoszenie fileds na bottom 
-            process_calendar_bottom(data,upscaled_path,production_id )
 
-            # ✅ 9. AKTUALIZACJA STATUSU ZAMÓWIENIA
+            # =====================================================
+            # 6. GENEROWANIE KALENDARZA — dwa pliki PSD w jednym folderze
+            #    Folder: calendar_{production_id}_{kod}/
+            #      ├── header_{production_id}.psd   (335 × 225 mm)
+            #      └── backing_{production_id}.psd  (321 × 641 mm)
+            # =====================================================
+            calendar_files = generate_calendar(
+                data=data,
+                top_image_path=data["top_image"],
+                upscaled_top_path=upscaled_header_path,
+                production_id=production_id,
+            )
+
+            # 7. Aktualizacja statusu produkcji
             try:
-                # Pobieramy obiekt produkcji na podstawie przekazanego ID
                 production = CalendarProduction.objects.get(id=production_id)
-                
-                # Aktualizujemy status i notatkę (opcjonalnie)
                 production.status = "done"
-                production.production_note = "Plik CMYK wygenerowany automatycznie."
-                
-                # Ustawiamy datę zakończenia (tak jak masz w serializerze)
+                production.production_note = "Pliki PSD wygenerowane (główka + plecy)."
                 production.finished_at = timezone.now()
-                
-                # Zapisujemy zmiany w bazie danych
                 production.save()
-                print(f"✅ Status produkcji {production_id} zmieniony na 'done'")
-                
+                print(f"✅ Produkcja {production_id} → done")
             except CalendarProduction.DoesNotExist:
-                print(f"⚠️ Nie znaleziono produkcji o ID {production_id} do aktualizacji statusu.")
+                print(f"⚠️ Nie znaleziono produkcji {production_id}")
+
+            # 8. Cleanup temp
+            try:
+                shutil.rmtree(temp_dir)
+            except OSError:
+                pass
 
             return Response({
-                "message": "Dane kalendarza zostały przetworzone, a obraz wgrany do Cloudinary.",
-                "folder": export_dir,
-                "json_path": json_path,
-                "top_image_final_url": data["top_image"] # Końcowy URL obrazu z naniesionym rokiem
+                "message": "Kalendarz wygenerowany — dwa pliki PSD.",
+                "export_dir": calendar_files["export_dir"],
+                "header_path": calendar_files["header"],
+                "backing_path": calendar_files["backing"],
             })
 
         except Exception as e:
-            print("❌ Nieoczekiwany błąd:", e)
+            print(f"❌ Błąd: {e}")
+            import traceback
+            traceback.print_exc()
             return Response({"error": str(e)}, status=500)
 
 class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
