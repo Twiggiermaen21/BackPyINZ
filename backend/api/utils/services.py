@@ -24,16 +24,16 @@ except ImportError:
 # ==========================================================
 
 # --- GŁÓWKA ---
-HEADER_WIDTH = 3957       # 13.19 cali = 335 mm
-HEADER_HEIGHT = 2658      #  8.86 cali = 225 mm
+HEADER_WIDTH = 3960       
+HEADER_HEIGHT = 2670      
 
 # --- PLECY ---
-BACKING_WIDTH = 3789      # 12.63 cali = 321 mm
-
+BACKING_WIDTH = 3780      # 12.63 cali = 321 mm
+H_CONNECT =330              # 1.10 cali = 28 mm (łączenie główki z plecami)
 H_GLUE = 120              #  0.40 cali =  10 mm  (klejenie główki na górze)
 H_MONTH_BOX = 1650        #  5.50 cali = 140 mm  (kalendarium)
 H_BIG = 264               #  0.88 cali =  22 mm  (linia bigowania)
-H_AD_STRIP = 354          #  1.18 cali =  30 mm  (pasek reklamowy)
+H_AD_STRIP = 360         #  1.18 cali =  30 mm  (pasek reklamowy)
 H_BLEED_BOTTOM = 120      #  0.40 cali =  10 mm  (spad dolny)
 
 BOX_WIDTH = 3543           # 11.81 cali = 300 mm  (szer. kalendarium/reklamy)
@@ -43,15 +43,7 @@ AD_PADDING_X = BOX_X
 AD_CONTENT_WIDTH = BOX_WIDTH
 
 # Łączna wysokość pleców
-BACKING_HEIGHT = (
-    H_GLUE
-    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 1
-    + H_BIG
-    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 2
-    + H_BIG
-    + H_MONTH_BOX + H_BIG + H_AD_STRIP   # segment 3
-    + H_BLEED_BOTTOM
-)  # = 7572 px = 641 mm
+BACKING_HEIGHT = 7290
 
 
 MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
@@ -525,27 +517,36 @@ def generate_backing(data, export_dir, production_id=None):
         if template_image_path and os.path.exists(template_image_path):
             with Image.open(template_image_path) as src_bg:
                 bg_layer = src_bg.convert("RGBA")
+                
+                # Obliczamy wysokość obszaru na tło (całość minus pasek górny)
+                bg_height = BACKING_HEIGHT - H_CONNECT
+
+                # Skalujemy grafikę, aby wypełniła tylko dolną część (pod paskiem)
                 bg_layer = ImageOps.fit(
                     bg_layer,
-                    (BACKING_WIDTH, BACKING_HEIGHT),
+                    (BACKING_WIDTH, bg_height),
                     method=Image.Resampling.LANCZOS,
                 )
-                base_img.paste(bg_layer, (0, 0))
-                print(f"🖼️ Tło pleców wklejone")
+                
+                # Wklejamy tło przesunięte w dół o H_CONNECT
+                base_img.paste(bg_layer, (0, H_CONNECT))
+                print(f"🖼️ Tło pleców wklejone (start Y: {H_CONNECT} px)")
         else:
             print("⚠️ Brak tła pleców — białe tło.")
 
         draw = ImageDraw.Draw(base_img)
 
-        # --- 3 SEGMENTY ---
+            # --- 3 SEGMENTY ---
         raw_fields = data.get("fields", {})
-        y = H_GLUE
+        y = H_CONNECT + 120  # biały pasek + odstęp
+
+        H_AD_STRIP_NEW = 360
+        GAP_AFTER_CAL = 90
+        GAP_AFTER_AD = 210
+        GAP_AFTER_AD_LAST = 120
 
         for i in range(1, 4):
             cal_y = y
-            big1_y = cal_y + H_MONTH_BOX
-            ad_y = big1_y + H_BIG
-            next_y = ad_y + H_AD_STRIP + H_BIG
 
             # KALENDARIUM
             draw.rectangle(
@@ -570,15 +571,18 @@ def generate_backing(data, export_dir, production_id=None):
                 g_text, font=g_font, fill="#9ca3af",
             )
 
+            # Pozycja paska reklamowego: po kalendarium + odstęp 90px
+            ad_y = cal_y + H_MONTH_BOX + GAP_AFTER_CAL
+
             # PASEK REKLAMOWY
-            strip_img = Image.new("RGBA", (AD_CONTENT_WIDTH, H_AD_STRIP), (255, 255, 255, 0))
+            strip_img = Image.new("RGBA", (AD_CONTENT_WIDTH, H_AD_STRIP_NEW), (255, 255, 255, 0))
             strip_draw = ImageDraw.Draw(strip_img)
 
             config = raw_fields.get(str(i)) or raw_fields.get(i)
             scale = 1.0
             pos_x = 0
             pos_y = 0
-
+            print(config)
             if config:
                 try: scale = float(config.get("size", 1.0))
                 except (ValueError, TypeError): scale = 1.0
@@ -605,14 +609,26 @@ def generate_backing(data, export_dir, production_id=None):
                             is_bold = True
 
                     stroke_width = int(f_size / 40) if is_bold else 0
-                    if is_bold and stroke_width < 1:
-                        stroke_width = 1
+                    if is_bold and stroke_width < 1: stroke_width = 1
+
+                    tl, tt, tr, tb = strip_draw.textbbox((0, 0), text, font=font_ad, stroke_width=stroke_width)
+                    text_width = tr - tl
+                    max_width = AD_CONTENT_WIDTH - 40
+
+                    if text_width > max_width:
+                        ratio = max_width / text_width
+                        new_size = int(f_size * ratio)
+                        font_ad = _load_font("arial.ttf", new_size)
+                        stroke_width = int(new_size / 40) if is_bold else 0
+                        if is_bold and stroke_width < 1: stroke_width = 1
+                        print(f"⚠️ Tekst za szeroki ({text_width}px > {max_width}px). Zmniejszono font: {f_size} -> {new_size}")
 
                     tl, tt, tr, tb = strip_draw.textbbox(
                         (0, 0), text, font=font_ad, stroke_width=stroke_width
                     )
                     txt_x = (AD_CONTENT_WIDTH - (tr - tl)) / 2
-                    txt_y = (H_AD_STRIP - (tb - tt)) / 2
+                    txt_y = (H_AD_STRIP_NEW - (tb - tt)) / 2 - tt
+
                     strip_draw.text(
                         (txt_x, txt_y), text, font=font_ad,
                         fill=text_color, stroke_width=stroke_width, stroke_fill=text_color,
@@ -643,7 +659,14 @@ def generate_backing(data, export_dir, production_id=None):
                         print(f"⚠️ Img segment {i}: {e}")
 
             base_img.paste(strip_img, (AD_PADDING_X, ad_y), strip_img)
-            y = next_y
+
+            # Przesunięcie Y na następny segment
+            if i < 3:
+                y = ad_y + H_AD_STRIP_NEW + GAP_AFTER_AD
+            else:
+                y = ad_y + H_AD_STRIP_NEW + GAP_AFTER_AD_LAST
+
+           
 
         # --- ZAPIS JAKO PSD ---
         saved_path = _save_as_psd(base_img, output_path)
