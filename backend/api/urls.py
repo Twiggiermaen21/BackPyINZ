@@ -6,7 +6,7 @@ from .views.image_views import *
 urlpatterns=[
 path('generate/', GenerateImage.as_view(), name='generate-image'),
 path("images-by-project/<str:project_name>/", ImagesByProjectView.as_view()),
-path('calendar-download/<int:pk>/', DownloadCalendarStaffView.as_view(), name='download-calendar-staff'),
+path("calendar-download/<int:pk>/", DownloadCalendarStaffView.as_view(), name='download-calendar-staff'),
     path("user/update-profile/", ProfileUpdateView.as_view(), name="update-profile"),
     path("user/change-email/", EmailUpdateView.as_view(), name="change-email"),
     path("user/change-password/",PasswordChangeView.as_view(), name="change-password"),

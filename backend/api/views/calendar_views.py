@@ -1,8 +1,9 @@
+import io
 import shutil
 import uuid
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Prefetch
-from rest_framework.permissions import IsAuthenticated
+from django.http import FileResponse, Http404
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from ..models import *
 from ..serializers import *
 from ..pagination import *
@@ -20,7 +21,7 @@ from ..utils.services import (
     handle_bottom_data,
     handle_top_image)
 from ..utils.upscaling import upscale_image_with_bigjpg
-
+import zipfile
 
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -606,25 +607,37 @@ class CalendarByIdStaffView(generics.RetrieveAPIView):
 
         return qs
     
-from django.http import FileResponse, Http404
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, IsAdminUser,AllowAny
-# views.py
-class DownloadCalendarStaffView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]  # lub IsAuthenticated, jeśli chcesz ograniczyć do zalogowanych użytkowników
+
+class DownloadCalendarStaffView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, pk, format=None):
-        export_dir = os.path.join(settings.MEDIA_ROOT, 'calendar_exports')
-        filename = f"final_calendar_{pk}_CMYK.jpg"
-        file_path = os.path.normpath(os.path.join(export_dir, filename))
+        # 1. Budujemy poprawną ścieżkę: media/calendar_exports/calendar_{pk}
+        calendar_dir = os.path.join(settings.MEDIA_ROOT, 'calendar_exports', f"calendar_{pk}")
 
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            file_handle = open(file_path, 'rb')
-            response = FileResponse(file_handle, content_type='image/jpeg')
-            
-            # Ważne nagłówki dla przeglądarki
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
-            return response
-        
-        raise Http404(f"Nie znaleziono pliku: {filename}")
+        if not os.path.exists(calendar_dir) or not os.path.isdir(calendar_dir):
+            # Debug w konsoli, żebyś wiedział co się dzieje
+            print(f"BŁĄD: Nie znaleziono folderu: {calendar_dir}")
+            raise Http404(f"Nie znaleziono folderu dla kalendarza: calendar_{pk}")
+
+        zip_buffer = io.BytesIO()
+        files_found = False
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for filename in os.listdir(calendar_dir):
+                file_path = os.path.join(calendar_dir, filename)
+                if os.path.isfile(file_path):
+                    zip_file.write(file_path, arcname=filename)
+                    files_found = True
+
+        if not files_found:
+             raise Http404("Folder kalendarza jest pusty.")
+
+        zip_buffer.seek(0)
+        final_zip_filename = f"calendar_{pk}_package.zip"
+
+        response = FileResponse(zip_buffer, content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{final_zip_filename}"'
+        response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+
+        return response

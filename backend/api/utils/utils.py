@@ -135,8 +135,8 @@ def create_export_folder(production_id, base_dir=None):
     if base_dir is None:
         base_dir = os.path.join(os.getcwd(), "media", "calendar_exports")
 
-    short_code = uuid.uuid4().hex[:8]
-    folder_name = f"calendar_{production_id}_{short_code}"
+
+    folder_name = f"calendar_{production_id}"
     export_dir = os.path.join(base_dir, folder_name)
     os.makedirs(export_dir, exist_ok=True)
 
