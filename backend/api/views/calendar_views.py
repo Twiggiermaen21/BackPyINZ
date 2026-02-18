@@ -403,7 +403,7 @@ class CalendarSearchBarView(generics.ListAPIView):
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
-class CalendarPrint(generics.CreateAPIView):
+class CalendarPrint(generics.CreateAPIView): 
 
     def create(self, request, *args, **kwargs):
         try:

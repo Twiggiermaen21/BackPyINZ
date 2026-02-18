@@ -10,7 +10,7 @@ def upscale_image_with_bigjpg(image_url, export_dir):
         bigjpg = Bigjpg(os.getenv("BIGJPG_KEY"))
         
         print("🚀 Starting upscaling with Bigjpg...")
-
+        print(f"url: {image_url}")
         current_stage = "Wysyłanie żądania do API (enlarge)"
         image_info = bigjpg.enlarge(
             style=Styles.Photo,
