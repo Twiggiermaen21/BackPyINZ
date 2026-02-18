@@ -57,7 +57,6 @@ def generate_custom_prompt(
     if styl_narracyjny:
         prompt += f"The narrative style of the image should resemble: {styl_narracyjny}. "
     return prompt
-
 def get_detailed_prompt_from_model(
     client,
     base_prompt: str,
@@ -71,15 +70,12 @@ def get_detailed_prompt_from_model(
     detale: str = None,
     realizm: str = None,
     styl_narracyjny: str = None,
-    # model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
     model: str = "ServiceNow-AI/Apriel-1.6-15b-Thinker",
     temperature: float = 0.7,
     stream: bool = False
 ):
-    print("Argumenty funkcji:")
-    for name, value in locals().items():
-        print(f"{name}: {value}")
-    full_prompt = generate_custom_prompt(
+    # Generujemy "surowe" dane wejściowe z Twojej funkcji pomocniczej
+    raw_attributes = generate_custom_prompt(
         baseprompt=base_prompt,
         inspiration=inspiration,
         color_style=color,
@@ -93,28 +89,41 @@ def get_detailed_prompt_from_model(
         styl_narracyjny=styl_narracyjny
     )
 
+    # Budujemy instrukcję dla modelu, żeby wiedział, co z tymi danymi zrobić
+    user_instruction = (
+        f"Input Data:\n{raw_attributes}\n\n"
+        "Task: Rewrite the above input data into a single, cohesive, highly detailed image generation prompt optimized for Flux.1 Schnell. "
+        "Describe the scene naturally, focusing on lighting, texture, and composition. "
+        "Do not list the requirements, just write the final visual description."
+    )
+
     messages = [
-    {
-        "role": "system", 
-        "content": (
-            "You are an expert Prompt Engineer. Your task is to take the user's "
-            "simple prompt and expand it into a high-quality, structured, and "
-            "effective instruction for an AI. For every request, follow the "
-            "CO-STAR framework (Context, Objective, Style, Tone, Audience, Response). "
-            "Ensure the expanded prompt includes a clear Persona, Task Constraints, "
-            "and a specific Output Format. If the user's intent is vague, ask "
-            "clarifying questions before providing the final prompt."
-        )
-    },
-    {"role": "user", "content": full_prompt}
-]
-    print("Generated full prompt for model:", messages)
+        {
+            "role": "system",
+            "content": (
+                "You are an expert visual prompt engineer specialized in Flux.1 Schnell architecture. "
+                "Your goal is to synthesize provided attributes into a rich, descriptive, natural language paragraph. "
+                "CRITICAL RULES:\n"
+                "1. Output ONLY the final prompt text. Do not say 'Here is the prompt' or use quotes.\n"
+                "2. Do not use Markdown headers or bullet points.\n"
+                "3. Ensure the description flows naturally like a story or a vivid observation.\n"
+                "4. Focus on high-fidelity details: lighting, camera angle, texture, and atmosphere."
+            )
+        },
+        {"role": "user", "content": user_instruction}
+    ]
+
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
         stream=stream
     )
-    print("Response from model:", response)
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    
+    # Opcjonalnie: Jeśli model "Thinker" zwraca tagi <think>, można je tutaj wyciąć
+    # import re
+    # content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
+    return content

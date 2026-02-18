@@ -51,7 +51,7 @@ class UpdateProfileImageView(generics.UpdateAPIView):
         serializer = ProfileImageSerializer(profile)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
-class ActivateUserView(generics.GenericAPIView):
+class ActivateUserView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def get(self, request, uidb64, token):
@@ -151,7 +151,7 @@ class PasswordChangeView(generics.UpdateAPIView):
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
 
-class PasswordResetView(generics.GenericAPIView):
+class PasswordResetView(generics.ListCreateAPIView):
     serializer_class = PasswordResetSerializer
     permission_classes = [AllowAny]
 
@@ -198,7 +198,7 @@ class PasswordResetView(generics.GenericAPIView):
 
         return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
 
-class PasswordResetConfirmView(generics.GenericAPIView):
+class PasswordResetConfirmView(generics.ListCreateAPIView):
     serializer_class = PasswordResetConfirmSerializer
     permission_classes = [AllowAny]
 
@@ -210,7 +210,7 @@ class PasswordResetConfirmView(generics.GenericAPIView):
         return response.Response({"detail": "Hasło zostało zresetowane"}, status=200)
 
 
-class GoogleAuthView(generics.GenericAPIView):
+class GoogleAuthView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):

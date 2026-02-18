@@ -7,7 +7,7 @@ def upscale_image_with_bigjpg(image_url, export_dir):
     
     try:
         current_stage = "Autoryzacja Bigjpg"
-        bigjpg = Bigjpg("7636406dfd0e4876ab57c95199cc1d75")
+        bigjpg = Bigjpg(os.getenv("BIGJPG_KEY"))
         
         print("🚀 Starting upscaling with Bigjpg...")
 

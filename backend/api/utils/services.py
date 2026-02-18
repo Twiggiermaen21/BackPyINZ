@@ -4,7 +4,7 @@ import requests
 from django.db.models import Prefetch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from ..models import Calendar, CalendarYearData, GeneratedImage
-from .utils import _save_as_psd, create_export_folder, hex_to_rgb, get_font_path, _load_font
+from .utils import save_as_psd, create_export_folder, hex_to_rgb, get_font_path, load_font
 import math
 import time
 import shutil
@@ -426,52 +426,68 @@ def handle_bottom_data(bottom_obj, export_dir):
 
 def generate_header(top_image_path, data, export_dir, production_id=None):
     """
-    Generuje plik główki kalendarza jako PSD.
-    Skaluje obraz do 3957×2658 px i opcjonalnie nakłada rok.
-
-    Returns:
-        str | None: ścieżka do zapisanego pliku
+    Generuje plik główki kalendarza jako PSD z uwzględnieniem spadów.
     """
     year_data = data.get("year_data") or data.get("year")
 
+    # Stałe wymiary z Reacta (netto - obszar widoczny po obcięciu)
+    REACT_WIDTH = 3720
+    REACT_HEIGHT = 2430
+    
+    # HEADER_WIDTH / HEADER_HEIGHT to Twoje wymiary brutto (3960 x 2670)
+    # Upewnij się, że są zdefiniowane globalnie lub przekaż je jako argumenty
+    
     if not top_image_path or not os.path.exists(top_image_path):
         print("⚠️ Brak pliku obrazu główki.")
         return None
 
     output_path = os.path.join(export_dir, f"header_{production_id}.psd")
-
+ 
     try:
         with Image.open(top_image_path) as img:
             img = img.convert("RGBA")
+            
+            # 1. Skalujemy obraz do pełnego formatu ze spadami (brutto)
             img_fitted = ImageOps.fit(
                 img,
                 (HEADER_WIDTH, HEADER_HEIGHT),
-                method=Image.Resampling.LANCZOS,
+                method=Image.Resampling.LANCZOS,  
             )
 
             if year_data:
                 draw = ImageDraw.Draw(img_fitted)
 
+                # --- OBLICZANIE OFFSETU (SPADÓW) ---
+                # Różnica między wymiarem brutto a netto, podzielona na 2 (lewo/góra)
+                bleed_offset_x = (HEADER_WIDTH - REACT_WIDTH) / 2
+                bleed_offset_y = (HEADER_HEIGHT - REACT_HEIGHT) / 2
+                
+                # Pobieramy pozycję z Reacta i dodajemy offset
+                raw_x = float(year_data.get("positionX", 50))
+                raw_y = float(year_data.get("positionY", 50))
+                
+                pos_x = int(raw_x + bleed_offset_x)
+                pos_y = int(raw_y + bleed_offset_y)
+
+                # Reszta parametrów bez zmian
                 text_content = str(year_data.get("text", "2026"))
                 font_size = int(float(year_data.get("size", 400)))
-                pos_x = int(float(year_data.get("positionX", 50)))
-                pos_y = int(float(year_data.get("positionY", 50)))
                 text_color = year_data.get("color", "#FFFFFF")
 
                 weight_raw = str(year_data.get("weight", "normal")).lower()
                 is_bold = weight_raw in ["bold", "700", "800", "900", "bolder"]
-
                 font_name = str(year_data.get("font", "arial"))
-                font_path = get_font_path(font_name)
-                font = _load_font(font_path, font_size)
+                
+                # Używamy Twojej poprawionej funkcji load_font
+                font = load_font(font_name, font_size)
 
                 stroke_w = int(font_size * 0.03) if is_bold else 0
                 if is_bold and stroke_w < 1:
                     stroke_w = 1
 
                 print(
-                    f"🖌️ Rok: '{text_content}' | Font: {font_path} "
-                    f"| Bold: {is_bold} (Stroke: {stroke_w}px)"
+                    f"🖌️ Rok: '{text_content}' | Offset spadów: ({bleed_offset_x}, {bleed_offset_y}) | "
+                    f"Poz: ({pos_x}, {pos_y})"
                 )
 
                 draw.text(
@@ -483,16 +499,17 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
                     stroke_fill=text_color,
                 )
 
-            # Konwersja do RGB i zapis jako PSD
+            # Zapis
             img_rgb = img_fitted.convert("RGB")
-            saved_path = _save_as_psd(img_rgb, output_path)
+            saved_path = save_as_psd(img_rgb, output_path) # Używamy Twojej funkcji _save_as_psd
 
-            print(f"✅ Główka: {saved_path} ({HEADER_WIDTH}×{HEADER_HEIGHT} px = 335×225 mm)")
+            print(f"✅ Główka: {saved_path} ({HEADER_WIDTH}×{HEADER_HEIGHT} px)")
             return saved_path
 
     except Exception as e:
         print(f"❌ Błąd generowania główki: {e}")
         return None
+    
 def generate_backing(data, export_dir, production_id=None):
     """
     Generuje plik pleców kalendarza jako PSD.
@@ -555,7 +572,7 @@ def generate_backing(data, export_dir, production_id=None):
             )
 
             month_name = MONTH_NAMES[i - 1]
-            m_font = _load_font("arial.ttf", 150)
+            m_font = load_font("arial.ttf", 150)
             center_x = BOX_X + BOX_WIDTH / 2
             l, t, r, b = draw.textbbox((0, 0), month_name, font=m_font)
             draw.text(
@@ -563,7 +580,7 @@ def generate_backing(data, export_dir, production_id=None):
                 month_name, font=m_font, fill="#1d4ed8",
             )
 
-            g_font = _load_font("arial.ttf", 100)
+            g_font = load_font("arial.ttf", 100)
             g_text = "[Siatka dni]"
             gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)
             draw.text(
@@ -596,7 +613,7 @@ def generate_backing(data, export_dir, production_id=None):
                     try: f_size = int(float(config.get("size", 200)))
                     except (ValueError, TypeError): f_size = 200
 
-                    font_ad = _load_font("arial.ttf", f_size)
+                    font_ad = load_font(config.get("font", "arial.ttf"), f_size)
                     text_color = config.get("color", "#333")
 
                     weight_val = config.get("weight") or config.get("font", {}).get("fontWeight")
@@ -618,7 +635,7 @@ def generate_backing(data, export_dir, production_id=None):
                     if text_width > max_width:
                         ratio = max_width / text_width
                         new_size = int(f_size * ratio)
-                        font_ad = _load_font("arial.ttf", new_size)
+                        font_ad = load_font(config.get("font", "arial.ttf"), new_size)
                         stroke_width = int(new_size / 40) if is_bold else 0
                         if is_bold and stroke_width < 1: stroke_width = 1
                         print(f"⚠️ Tekst za szeroki ({text_width}px > {max_width}px). Zmniejszono font: {f_size} -> {new_size}")
@@ -669,7 +686,7 @@ def generate_backing(data, export_dir, production_id=None):
            
 
         # --- ZAPIS JAKO PSD ---
-        saved_path = _save_as_psd(base_img, output_path)
+        saved_path = save_as_psd(base_img, output_path)
         print(f"✅ Plecy: {saved_path} ({BACKING_WIDTH}×{BACKING_HEIGHT} px = 321×641 mm)")
 
         # Cleanup tła

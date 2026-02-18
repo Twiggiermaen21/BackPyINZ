@@ -62,17 +62,36 @@ def get_font_path(font_name):
 
     return font_path
 
-def _load_font(name_or_path, size):
-    """Bezpieczne ładowanie czcionki z fallbackiem."""
+
+# 1. Zdefiniuj bazową ścieżkę do czcionek
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FONTS_DIR = os.path.join(BASE_DIR, "fonts") # Zakładamy, że folder 'fonts' jest w tym samym miejscu co skrypt
+def load_font(name_or_path, size):
+    """Bezpieczne ładowanie czcionki z obsługą folderu i rozszerzeń."""
+    # Jeśli dostaniemy samą nazwę np. "Arial", dodajmy .ttf i ścieżkę do folderu
+    if not name_or_path.endswith((".ttf", ".otf")):
+        font_filename = f"{name_or_path.lower()}.ttf"
+    else:
+        font_filename = name_or_path
+
+    font_path = os.path.join(FONTS_DIR, font_filename)
+
     try:
-        return ImageFont.truetype(name_or_path, size)
+        # Próba 1: Ładowanie z Twojego folderu fonts
+        print(f"🔍 Próba ładowania fontu: '{name_or_path}' z rozmiarem {size}px")
+        return ImageFont.truetype(font_path, size)
     except OSError:
         try:
-            return ImageFont.truetype("arial.ttf", size)
+            # Próba 2: Ładowanie bezpośrednio (jeśli name_or_path to była pełna ścieżka)
+            return ImageFont.truetype(name_or_path, size)
         except OSError:
-            return ImageFont.load_default()
-
-
+            print(f"⚠️ Nie znaleziono '{font_path}'. Używam awaryjnie arial.ttf")
+            try:
+                # Próba 3: Sztywne ładowanie Ariala z Twojego folderu
+                return ImageFont.truetype(os.path.join(FONTS_DIR, "arial.ttf"), size)
+            except OSError:
+                # Ostateczność: Czcionka systemowa (zadziała na Windows)
+                return ImageFont.truetype("arial", size)
 def load_image_robust(path_or_url):
     """
     Inteligentna funkcja otwierająca obrazek.
@@ -111,7 +130,7 @@ def load_image_robust(path_or_url):
         return None
 
 
-def _save_as_psd(pil_image, output_path):
+def save_as_psd(pil_image, output_path):
     """Zapisuje obraz PIL jako PSD. Fallback na JPG CMYK jeśli brak psd_tools."""
     if HAS_PSD:
         psd = PSDImage.new(mode="CMYK", size=pil_image.size)

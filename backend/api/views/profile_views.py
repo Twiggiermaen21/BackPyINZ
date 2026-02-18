@@ -77,7 +77,7 @@ class PasswordChangeView(generics.UpdateAPIView):
         serializer.save()
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
-class PasswordResetView(generics.GenericAPIView):
+class PasswordResetView(generics.ListCreateAPIView):
     serializer_class = PasswordResetSerializer
     permission_classes = [AllowAny]
 
@@ -105,7 +105,7 @@ class PasswordResetView(generics.GenericAPIView):
 
         return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
 
-class PasswordResetConfirmView(generics.GenericAPIView):
+class PasswordResetConfirmView(generics.ListCreateAPIView):
     serializer_class = PasswordResetConfirmSerializer
     permission_classes = [AllowAny]
 
