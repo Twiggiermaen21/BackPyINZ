@@ -1,5 +1,5 @@
 import os
-import requests  # <--- Konieczny import do ręcznego pobierania
+import requests  
 from bigjpg import Bigjpg, Styles, Noises, EnlargeValues
 
 def upscale_image_with_bigjpg(image_url, export_dir):
@@ -19,17 +19,9 @@ def upscale_image_with_bigjpg(image_url, export_dir):
             image_url=image_url
         )
         
-        # Biblioteka sama czeka na zakończenie procesu wewnątrz metody enlarge/wait
-        # Ale musimy wyciągnąć URL ZANIM spróbujemy pobrać
-        
         current_stage = "Pobieranie URL przetworzonego obrazu"
-        # Czasami trzeba poczekać chwilę, biblioteka to robi, 
-        # ale tutaj pobieramy sam link do gotowego pliku
+        
         upscaled_url_from_api = image_info.get_url() 
-
-        # ---------------------------------------------------------
-        # ZMIANA: RĘCZNA OBSŁUGA PLIKÓW I POBIERANIA
-        # ---------------------------------------------------------
 
         current_stage = "Weryfikacja katalogu eksportu"
         if not os.path.exists(export_dir):
@@ -50,7 +42,6 @@ def upscale_image_with_bigjpg(image_url, export_dir):
 
         current_stage = f"Pobieranie pliku (requests) z: {upscaled_url_from_api}"
         
-        # Używamy nagłówka User-Agent, aby udawać przeglądarkę i uniknąć błędu 403
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }

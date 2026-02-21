@@ -122,8 +122,4 @@ def get_detailed_prompt_from_model(
 
     content = response.choices[0].message.content
     
-    # Opcjonalnie: Jeśli model "Thinker" zwraca tagi <think>, można je tutaj wyciąć
-    # import re
-    # content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
-
     return content
