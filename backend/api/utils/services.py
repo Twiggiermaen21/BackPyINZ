@@ -481,7 +481,7 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
                 # Używamy Twojej poprawionej funkcji load_font
                 font = load_font(font_name, font_size)
 
-                stroke_w = int(font_size * 0.03) if is_bold else 0
+                stroke_w = int(font_size * 0.025) if is_bold else 0
                 if is_bold and stroke_w < 1:
                     stroke_w = 1
 
@@ -633,22 +633,56 @@ def generate_backing(data, export_dir, production_id=None):
                     max_width = AD_CONTENT_WIDTH - 40
 
                     if text_width > max_width:
-                        ratio = max_width / text_width
-                        new_size = int(f_size * ratio)
-                        font_ad = load_font(config.get("font", "arial.ttf"), new_size)
-                        stroke_width = int(new_size / 40) if is_bold else 0
-                        if is_bold and stroke_width < 1: stroke_width = 1
-                        print(f"⚠️ Tekst za szeroki ({text_width}px > {max_width}px). Zmniejszono font: {f_size} -> {new_size}")
+                        lines = []
+                        current_line = ""
+                        
+                        for char in text:
+                            # Tworzymy linię testową dodając jeden znak
+                            test_line = current_line + char
+                            tl_test, _, tr_test, _ = strip_draw.textbbox((0, 0), test_line, font=font_ad, stroke_width=stroke_width)
+                            test_width_current = tr_test - tl_test
+                            
+                            # Jeśli po dodaniu znaku szerokość jest ok, akceptujemy
+                            if test_width_current <= max_width:
+                                current_line = test_line
+                            else:
+                                # Jeśli przekracza, zapisujemy to co mieliśmy do tej pory
+                                if current_line:
+                                    lines.append(current_line)
+                                # I zaczynamy nową linię od tego znaku, który się nie zmieścił
+                                current_line = char
+                        
+                        # Dodajemy ostatnią pozostałą linię (resztówkę)
+                        if current_line:
+                            lines.append(current_line)
+                            
+                        final_text = "\n".join(lines)
+                        
+                        # --- SEKCJA DEBUGOWANIA (PRINTY) ---
+                        print("="*40)
+                        print(f"⚠️ Tekst za szeroki ({text_width}px > {max_width}px). Podzielono na {len(lines)} linie (cięcie po znakach):")
+                        for i, line in enumerate(lines):
+                            print(f"   -> Linia {i+1}: '{line}'")
+                        print("="*40)
+                        # -----------------------------------
+                        
+                    else:
+                        # Tekst mieści się w jednej linii
+                        final_text = text
+                        print(f"✅ Tekst mieści się w jednej linii. Brak dzielenia.")
 
-                    tl, tt, tr, tb = strip_draw.textbbox(
-                        (0, 0), text, font=font_ad, stroke_width=stroke_width
-                    )
-                    txt_x = (AD_CONTENT_WIDTH - (tr - tl)) / 2
+                    # Pobieramy wymiary całego bloku (obsługuje \n dla wieloliniowego)
+                    tl, tt, tr, tb = strip_draw.textbbox((0, 0), final_text, font=font_ad, stroke_width=stroke_width)
+                    
+                    # Obliczamy pozycje X i Y (z wyrównaniem na środek paska)
+                    txt_x = (AD_CONTENT_WIDTH - (tr - tl)) / 2 - tl
                     txt_y = (H_AD_STRIP_NEW - (tb - tt)) / 2 - tt
 
-                    strip_draw.text(
-                        (txt_x, txt_y), text, font=font_ad,
+                    # Rysowanie z wyśrodkowaniem tekstu
+                    strip_draw.multiline_text(
+                        (txt_x, txt_y), final_text, font=font_ad,
                         fill=text_color, stroke_width=stroke_width, stroke_fill=text_color,
+                        align="center"
                     )
 
             # Obrazki w pasku

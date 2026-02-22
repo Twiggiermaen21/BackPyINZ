@@ -60,9 +60,9 @@ def generate_custom_prompt(
 def get_detailed_prompt_from_model(
     client,
     base_prompt: str,
-    inspiration: str,
-    color: str,
-    composition: str,
+    inspiration: str = None,
+    color: str = None,
+    composition: str = None,
     style: str = None,
     atmosfera: str = None,
     tlo: str = None,
@@ -89,14 +89,17 @@ def get_detailed_prompt_from_model(
         styl_narracyjny=styl_narracyjny
     )
 
-    # Budujemy instrukcję dla modelu, żeby wiedział, co z tymi danymi zrobić
+    # Zmiana 1: Dodanie instrukcji o tłumaczeniu w zadaniu użytkownika
     user_instruction = (
-        f"Input Data:\n{raw_attributes}\n\n"
-        "Task: Rewrite the above input data into a single, cohesive, highly detailed image generation prompt optimized for Flux.1 Schnell. "
+        f"Input Data (mixed English and Polish):\n{raw_attributes}\n\n"
+        "Task: First, translate all Polish words and concepts into English. "
+        "Then, rewrite the translated data into a single, cohesive, highly detailed image generation prompt optimized for Flux.1 Schnell. "
+        "The final output MUST be entirely in English. "
         "Describe the scene naturally, focusing on lighting, texture, and composition. "
         "Do not list the requirements, just write the final visual description."
     )
 
+    # Zmiana 2: Aktualizacja ról systemowych (CRITICAL RULES)
     messages = [
         {
             "role": "system",
@@ -104,10 +107,11 @@ def get_detailed_prompt_from_model(
                 "You are an expert visual prompt engineer specialized in Flux.1 Schnell architecture. "
                 "Your goal is to synthesize provided attributes into a rich, descriptive, natural language paragraph. "
                 "CRITICAL RULES:\n"
-                "1. Output ONLY the final prompt text. Do not say 'Here is the prompt' or use quotes.\n"
-                "2. Do not use Markdown headers or bullet points.\n"
-                "3. Ensure the description flows naturally like a story or a vivid observation.\n"
-                "4. Focus on high-fidelity details: lighting, camera angle, texture, and atmosphere."
+                "1. Output ONLY the final prompt text in STRICTLY ENGLISH. Do not say 'Here is the prompt' or use quotes.\n"
+                "2. Translate any non-English (e.g., Polish) input terms into English seamlessly before generating the description.\n"
+                "3. Do not use Markdown headers or bullet points.\n"
+                "4. Ensure the description flows naturally like a story or a vivid observation.\n"
+                "5. Focus on high-fidelity details: lighting, camera angle, texture, and atmosphere."
             )
         },
         {"role": "user", "content": user_instruction}
@@ -122,4 +126,4 @@ def get_detailed_prompt_from_model(
 
     content = response.choices[0].message.content
     
-    return content
+    return content.strip()

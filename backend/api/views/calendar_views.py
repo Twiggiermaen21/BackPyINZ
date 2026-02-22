@@ -558,18 +558,12 @@ class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     lookup_field = 'pk'
-
-   
-
+    
     def get_queryset(self):
         return CalendarProduction.objects.all()
 
     def perform_update(self, serializer):
         print( "StaffCalendarProductionRetrieveUpdate view initialized" )
-        print(self.request.data)
-   
-   
-        # automatycznie zaktualizuje updated_at dzięki auto_now=True w modelu
         serializer.save()
 
 class CalendarByIdStaffView(generics.RetrieveAPIView):
