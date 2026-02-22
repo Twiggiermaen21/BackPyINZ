@@ -116,7 +116,7 @@ class CalendarMonthFieldImage(models.Model):
     path = models.CharField(max_length=500)  
     positionX = models.CharField(max_length=50, blank=True, null=True)
     positionY = models.CharField(max_length=50, blank=True, null=True)
-    size = models.PositiveIntegerField(blank=True, null=True)  
+    size = models.CharField(max_length=20, blank=True, null=True)
 
 class CalendarYearData(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)

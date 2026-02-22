@@ -22,7 +22,7 @@ except ImportError:
 # ==========================================================
 # STAŁE WYMIAROWE Z SZABLONU DRUKARNI (@ 300 DPI)
 # ==========================================================
-
+Image.MAX_IMAGE_PIXELS=140000000
 # --- GŁÓWKA ---
 HEADER_WIDTH = 3960       
 HEADER_HEIGHT = 2670      

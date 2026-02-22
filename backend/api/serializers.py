@@ -395,17 +395,37 @@ class CalendarSerializer(serializers.ModelSerializer):
             "content_type_id": ContentType.objects.get_for_model(instance).id,
         })
         return data
-    
+     # --- Images for fields ---
+    def get_images_for_fields(self, obj):
+        # Próbujemy pobrać z prefetch (to_attr), a jak nie ma, to ze standardowego setu
+        # Zakładam, że related_name w modelu ImageForField to 'imageforfield_set' (domyślne)
+        # lub zdefiniowałeś inne.
+        
+        # Jeśli w widoku masz to_attr="prefetched_images_for_fields", to zadziała pierwsze.
+        # Jeśli nie, zadziała drugie (dodatkowe zapytanie do bazy, chyba że prefetch był bez to_attr).
+        
+        items = getattr(obj, "prefetched_images_for_fields", getattr(obj, "imageforfield_set", []))
+        
+        # Jeśli items to Manager (np. imageforfield_set), musimy wywołać .all()
+        if hasattr(items, 'all'):
+             items = items.all()
+             
+        
+
    
 
 class CalendarProductionSerializer(serializers.ModelSerializer):
     calendar_name = serializers.CharField(source='calendar.name', read_only=True)
-
+    author_username = serializers.CharField(source='author.username', read_only=True)
+    author_email = serializers.CharField(source='author.email', read_only=True)
     class Meta:
         model = CalendarProduction
         fields = [
             "id",
             "calendar",
+            'author', # to zwróci samo ID autora (standardowe zachowanie)
+            'author_username', 
+            'author_email',
             "calendar_name", 
             "status",
             "quantity",
@@ -440,7 +460,7 @@ class CalendarProductionSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-
+   
 
 class StylArtystycznySerializer(serializers.ModelSerializer):
     class Meta:

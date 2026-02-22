@@ -403,6 +403,9 @@ class CalendarSearchBarView(generics.ListAPIView):
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
+from django.db import close_old_connections # Dodaj ten import na górze pliku
+# ... inne Twoje importy ...
+
 class CalendarPrint(generics.CreateAPIView): 
 
     def create(self, request, *args, **kwargs):
@@ -447,19 +450,16 @@ class CalendarPrint(generics.CreateAPIView):
             # 4. Upscaling główki
             upscaled_header_path = None
             if data["top_image"]:
-                result = upscale_image_with_bigjpg(data["top_image"], temp_dir)
+                result = upscale_image_with_bigjpg(data["top_image"], temp_dir, 4)
                 upscaled_header_path = result["local_upscaled"]
 
             # 5. Upscaling tła pleców (jeśli obraz)
             if data["bottom"] and data["bottom"].get("type") == "image":
-                result = upscale_image_with_bigjpg(data["bottom"]["url"], temp_dir)
+                result = upscale_image_with_bigjpg(data["bottom"]["url"], temp_dir, 8)
                 data["bottom"]["image_path"] = result["local_upscaled"]
 
             # =====================================================
-            # 6. GENEROWANIE KALENDARZA — dwa pliki PSD w jednym folderze
-            #    Folder: calendar_{production_id}_{kod}/
-            #      ├── header_{production_id}.psd   (335 × 225 mm)
-            #      └── backing_{production_id}.psd  (321 × 641 mm)
+            # 6. GENEROWANIE KALENDARZA
             # =====================================================
             calendar_files = generate_calendar(
                 data=data,
@@ -468,11 +468,16 @@ class CalendarPrint(generics.CreateAPIView):
                 production_id=production_id,
             )
 
-            # 7. Aktualizacja statusu produkcji
+            # =====================================================
+            # 7. Aktualizacja statusu produkcji (TUTAJ JEST ZMIANA)
+            # =====================================================
+            # Ponieważ upscaling i generowanie PSD mogło zająć minuty,
+            # musimy upewnić się, że Django ma "świeże" połączenie z bazą.
+            close_old_connections()
+            
             try:
                 production = CalendarProduction.objects.get(id=production_id)
                 production.status = "done"
-                production.production_note = "Pliki PSD wygenerowane (główka + plecy)."
                 production.finished_at = timezone.now()
                 production.save()
                 print(f"✅ Produkcja {production_id} → done")
@@ -493,11 +498,13 @@ class CalendarPrint(generics.CreateAPIView):
             })
 
         except Exception as e:
+            # Upewniamy się, że w razie błędu też możemy bezpiecznie zaktualizować bazę
+            close_old_connections()
             print(f"❌ Błąd: {e}")
             import traceback
             traceback.print_exc()
             return Response({"error": str(e)}, status=500)
-
+        
 class CalendarProductionRetrieveDestroy(generics.RetrieveDestroyAPIView):
     serializer_class = CalendarProductionSerializer
     permission_classes = [IsAuthenticated]
@@ -532,14 +539,11 @@ class CalendarProductionList(generics.ListCreateAPIView):
         serializer.save(author=self.request.user)
 
 
-class IsStaffPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
 
 
 class CalendarProductionStaffList(generics.ListAPIView):
     serializer_class = CalendarProductionSerializer
-    permission_classes = [IsAuthenticated,IsStaffPermission]
+    permission_classes = [IsAuthenticated,IsAdminUser]
     pagination_class = CalendarPagination
 
     def get_queryset(self):
@@ -552,7 +556,7 @@ class CalendarProductionStaffList(generics.ListAPIView):
     
 class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
     serializer_class = CalendarProductionSerializer
-    permission_classes = [IsAuthenticated, IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsAdminUser]
     lookup_field = 'pk'
 
    
