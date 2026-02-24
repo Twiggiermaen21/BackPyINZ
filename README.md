@@ -210,7 +210,7 @@ Parametry użytkownika
 
 ```bash
 # Klonowanie repozytorium
-git clone https://github.com/your-username/ai-calendar-backend.git
+git clone https://github.com/Twiggiermaen21/BackPyINZ.git
 cd ai-calendar-backend
 
 # Utworzenie wirtualnego środowiska
