@@ -130,21 +130,53 @@ def load_image_robust(path_or_url):
         return None
 
 
+from PIL import Image, ImageCms
+import os
+
+# Ścieżka do profilu ICC — dostosuj do swojego środowiska
+CMYK_PROFILE_PATH = os.path.join(
+    # os.path.dirname(__file__), "profiles", "PSOuncoated_v3_FOGRA52.icc"
+        os.path.dirname(__file__), "profiles", "eciCMYK_v2.icc"
+
+)
+
+def rgb_to_cmyk(pil_image):
+    """Konwersja RGB -> CMYK z profilami ICC."""
+    if pil_image.mode == "CMYK":
+        return pil_image
+    
+    if pil_image.mode != "RGB":
+        pil_image = pil_image.convert("RGB")
+    
+    srgb_profile = ImageCms.createProfile("sRGB")
+    cmyk_profile = ImageCms.getOpenProfile(CMYK_PROFILE_PATH)
+    print(f"🔄 Konwersja RGB -> CMYK z profilami ICC: {CMYK_PROFILE_PATH}")
+    transform = ImageCms.buildTransform(
+        srgb_profile,
+        cmyk_profile,
+        "RGB",
+        "CMYK",
+        renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC
+    )
+    
+    return ImageCms.applyTransform(pil_image, transform)
+
+
 def save_as_psd(pil_image, output_path):
     """Zapisuje obraz PIL jako PSD. Fallback na JPG CMYK jeśli brak psd_tools."""
+    cmyk_image = rgb_to_cmyk(pil_image)
+    
     if HAS_PSD:
-        psd = PSDImage.new(mode="CMYK", size=pil_image.size)
-        layer = PixelLayer.frompil(pil_image, psd)
+        psd = PSDImage.new(mode="CMYK", size=cmyk_image.size)
+        layer = PixelLayer.frompil(cmyk_image, psd)
         psd.append(layer)
         psd.save(output_path)
     else:
-        # Fallback: JPG CMYK
         fallback_path = output_path.replace(".psd", "_CMYK.jpg")
-        img_cmyk = pil_image.convert("CMYK")
-        img_cmyk.save(fallback_path, format="JPEG", dpi=(300, 300), quality=95, subsampling=0)
+        cmyk_image.save(fallback_path, format="JPEG", dpi=(300, 300), quality=95, subsampling=0)
         output_path = fallback_path
+    
     return output_path
-
 
 def create_export_folder(production_id, base_dir=None):
     """
