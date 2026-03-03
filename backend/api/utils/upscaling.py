@@ -1,16 +1,14 @@
 import os
 import requests  
-from django.conf import settings # <--- DODANY IMPORT
+from django.conf import settings 
 from bigjpg import Bigjpg, Styles, Noises, EnlargeValues
 
 def upscale_image_with_bigjpg(image_url, export_dir, enlarge):
     current_stage = "Inicjalizacja funkcji"
     
-    # <--- ZMIANA: Tworzymy stałą ścieżkę do media/pobrane --->
-    # Używamy settings.MEDIA_ROOT, co automatycznie celuje w Twój folder "media"
     pobrane_dir = os.path.join(settings.MEDIA_ROOT, "pobrane")
     
-    enlarge_value = EnlargeValues._4x  # Domyślna wartość, jeśli nie zostanie podana
+    enlarge_value = EnlargeValues._4x  
     if enlarge == 4:
         enlarge_value = EnlargeValues._4x
     elif enlarge == 8:
@@ -34,7 +32,7 @@ def upscale_image_with_bigjpg(image_url, export_dir, enlarge):
         upscaled_url_from_api = image_info.get_url() 
 
         current_stage = "Weryfikacja katalogu eksportu"
-        # Sprawdzamy i tworzymy folder "pobrane", jeśli go nie ma
+       
         if not os.path.exists(pobrane_dir):
             os.makedirs(pobrane_dir)
 
@@ -49,7 +47,7 @@ def upscale_image_with_bigjpg(image_url, export_dir, enlarge):
         next_number = max(existing_numbers, default=0) + 1
 
         local_filename = f"enlarged_image_{next_number}.png"
-        # Podpinamy nową ścieżkę do zapisu
+  
         upscaled_path = os.path.join(pobrane_dir, local_filename)
 
         current_stage = f"Pobieranie pliku (requests) z: {upscaled_url_from_api}"

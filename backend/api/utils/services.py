@@ -1,4 +1,4 @@
-# calendar_export/services.py
+
 import os
 import requests
 from django.db.models import Prefetch
@@ -19,9 +19,7 @@ try:
 except ImportError:
     HAS_PSD = False
 
-# ==========================================================
-# STAŁE WYMIAROWE Z SZABLONU DRUKARNI (@ 300 DPI)
-# ==========================================================
+
 Image.MAX_IMAGE_PIXELS=140000000
 # --- GŁÓWKA ---
 HEADER_WIDTH = 3960       
@@ -49,15 +47,10 @@ BACKING_HEIGHT = 7290
 MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
 
 def fetch_calendar_data(calendar_id):
-    """
-    Pobiera obiekt Calendar wraz z powiązanymi polami (GenericForeignKey).
-    Django automatycznie pobierze odpowiednie modele (Text lub Image) dla field1/2/3
-    oraz odpowiedni model dla stopki (Image, Color, Gradient).
-    """
+  
     qs = Calendar.objects.filter(id=calendar_id)
     
-    # 1. Optymalizacja SQL (select_related)
-    # Pobieramy ContentType, aby Django wiedziało, w jakich tabelach szukać danych
+   
     qs = qs.select_related(
         "top_image",
         "year_data",
@@ -67,8 +60,7 @@ def fetch_calendar_data(calendar_id):
         "bottom_content_type",
     )
 
-    # 2. Pobieranie danych (prefetch_related)
-    # Django automatycznie obsłuży polimorfizm (czy to Text, czy Image)
+  
     qs = qs.prefetch_related(
         "field1",
         "field2",
@@ -79,7 +71,7 @@ def fetch_calendar_data(calendar_id):
     return qs.first()
 
 def get_year_data(calendar):
-    """Pobiera i zwraca dane dla sekcji 'year' kalendarza."""
+    
     year_data = None
     if getattr(calendar, "year_data_id", None):
         year_data_obj = CalendarYearData.objects.filter(id=calendar.year_data_id).first()
@@ -96,60 +88,53 @@ def get_year_data(calendar):
     return year_data
 
 def handle_field_data(field_obj, field_number, export_dir):
-    """
-    Przetwarza obiekt pola (Tekst lub Obraz).
-    Dla obrazów: pobiera plik z URL/Path jeśli podano export_dir.
-    Dla tekstu: zwraca parametry formatowania.
-    """
+    
     if not field_obj:
         return None
 
-    # --- PRZYPADEK 1: OBRAZEK ---
-    # Sprawdzamy czy obiekt ma atrybut 'path' (Twoja nowa nazwa) lub 'url' (stara nazwa)
+
     image_source = getattr(field_obj, "path", None) or getattr(field_obj, "url", None)
 
     if image_source:
-        # Przygotowujemy podstawowy słownik zwrotny z geometrią
+        
         result = {
-            "field_number": field_number,  # Używamy argumentu funkcji, nie atrybutu obiektu
+            "field_number": field_number,  
             "type": "image",
-            "image_url": image_source,     # Domyślnie URL/Path z bazy
+            "image_url": image_source,     
             "positionX": getattr(field_obj, "positionX", 0),
             "positionY": getattr(field_obj, "positionY", 0),
             "size": getattr(field_obj, "size", 1.0),
         }
 
-        # Logika pobierania pliku (tylko jeśli mamy export_dir i jest to link http)
+      
         if export_dir and image_source.startswith(("http://", "https://")):
             try:
-                # Wyciągamy bezpieczną nazwę pliku
-                # np. field1_obrazek.png
-                original_name = os.path.basename(image_source.split("?")[0]) # split usuwa query params
+                
+                original_name = os.path.basename(image_source.split("?")[0]) 
                 if not original_name: original_name = "image.png"
                 
                 filename = f"field{field_number}_{original_name}"
                 dest_path = os.path.join(export_dir, filename)
 
-                # Pobieranie
+            
                 response = requests.get(image_source, stream=True, timeout=10)
                 if response.status_code == 200:
                     with open(dest_path, "wb") as f:
                         for chunk in response.iter_content(1024):
                             f.write(chunk)
                     
-                    # Nadpisujemy URL ścieżką lokalną
+                    
                     result["image_url"] = dest_path
                 else:
                     print(f"⚠️ Błąd pobierania pola {field_number}: HTTP {response.status_code}")
             
             except Exception as e:
                 print(f"⚠️ Wyjątek przy pobieraniu pola {field_number}: {e}")
-                # W razie błędu result['image_url'] pozostaje oryginalnym URL-em
+               
 
         return result
 
-    # --- PRZYPADEK 2: TEKST ---
-    # Jeśli ma atrybut 'text' i nie jest pusty
+
     if hasattr(field_obj, "text") and field_obj.text:
         return {
             "field_number": field_number,
@@ -164,7 +149,6 @@ def handle_field_data(field_obj, field_number, export_dir):
     return None
 
 def handle_top_image(calendar, export_dir):
-    """Pobiera dane obrazu i zapisuje go lokalnie, jeśli rok ma być dodany."""
     if calendar.top_image_id:
         try:
             gen_img = GeneratedImage.objects.get(id=calendar.top_image_id)
@@ -175,50 +159,37 @@ def handle_top_image(calendar, export_dir):
 
 
 def create_gradient_vertical(size, start_rgb, end_rgb):
-    """Szybki gradient pionowy (resize 1px)."""
+  
     width, height = size
-    # Generujemy pasek o wysokości 256px dla płynności
+   
     gradient_h = 256
     base = Image.new('RGB', (1, gradient_h))
     pixels = base.load()
     
     for y in range(gradient_h):
         t = y / (gradient_h - 1)
-        # Opcjonalnie: t = math.pow(t, 0.8) # można zmienić krzywą, żeby kolor startowy był "większy"
+        
         pixels[0, y] = interpolate_color(start_rgb, end_rgb, t)
         
-    # Skalujemy do docelowego rozmiaru
     return base.resize((width, height), Image.Resampling.BICUBIC)
 
 def create_radial_gradient_css(size, start_rgb, end_rgb, center=(0.5, 0.5), offset_y=0):
-    """
-    Gradient radialny (Circle).
-    offset_y: przesunięcie środka w pionie w pikselach (np. 100).
-    """
     width, height = size
-    
-    # Optymalizacja: Generujemy na mniejszym obrazku i skalujemy
     small_w = 400
-    # Zachowujemy proporcje, żeby koło nie zrobiło się jajowate
     small_h = int(400 * (height / width))
     
     base = Image.new('RGB', (small_w, small_h))
     pixels = base.load()
     
-    # 1. Obliczamy przesunięcie relatywne (jaką częścią wysokości jest offset)
-    # Jeśli offset_y = 100 px, a wysokość to 7000 px, to przesuwamy o ok. 0.014 wysokości
     relative_offset = offset_y / height
-    
-    # 2. Ustalamy środek uwzględniając offset
+
     target_cy_normalized = center[1] + relative_offset
     
     cx = int(small_w * center[0])
     cy = int(small_h * target_cy_normalized)
     
-    # Promień krycia (do najdalszego rogu od NOWEGO środka)
     max_dist = math.sqrt(max(cx, small_w - cx)**2 + max(cy, small_h - cy)**2)
     
-    # Zabezpieczenie przed dzieleniem przez zero (gdyby max_dist wyszło 0)
     if max_dist == 0: max_dist = 1
     
     for y in range(small_h):
@@ -233,60 +204,38 @@ def interpolate_color(start_rgb, end_rgb, factor):
     return tuple(int(start + (end - start) * factor) for start, end in zip(start_rgb, end_rgb))
 
 def create_waves_css(size, start_rgb, end_rgb):
-    """
-    Odwzorowanie CSS: repeating-linear-gradient(135deg, A, B 20%, A 40%)
-    """
     w, h = size
-    
-    # 1. Obliczamy przekątną, która w CSS jest podstawą do wyliczania %
     diagonal = math.sqrt(w**2 + h**2)
-    
-    # 2. Tworzymy płótno robocze
-    # Musi być na tyle duże, aby po obrocie o 45 stopni zakryć cały docelowy prostokąt.
-    # Kwadrat o boku = przekątna + zapas jest bezpieczny.
     canvas_side = int(diagonal * 1.5) 
-    
-    # 3. Definiujemy wysokość jednego cyklu (odpowiada 40% w CSS)
     cycle_height = int(diagonal * 0.40)
-    
-    # Zabezpieczenie przed zbyt małym cyklem (np. przy małych obrazkach)
+
     if cycle_height < 10: cycle_height = 10
 
-    # 4. Generujemy jeden pasek gradientu (cykl)
-    # W CSS: 0% (A) -> 20% (B) -> 40% (A). 
-    # To oznacza, że w połowie cyklu (20% z 40%) mamy kolor B.
-    strip_h = 256 # Rozdzielczość generowania gradientu (dla gładkości)
+ 
+    strip_h = 256 
     strip = Image.new('RGB', (1, strip_h))
     px = strip.load()
     
     for y in range(strip_h):
         t = y / (strip_h - 1)
         if t <= 0.5:
-            # Pierwsza połowa (0 -> 20%): A -> B
             local_t = t * 2
             px[0, y] = interpolate_color(start_rgb, end_rgb, local_t)
         else:
-            # Druga połowa (20% -> 40%): B -> A
             local_t = (t - 0.5) * 2
             px[0, y] = interpolate_color(end_rgb, start_rgb, local_t)
             
-    # Skalujemy pasek do docelowej wysokości cyklu
+
     cycle_img = strip.resize((canvas_side, cycle_height), Image.Resampling.BICUBIC)
     
-    # 5. Powielamy cykl w pionie, aby wypełnić całe płótno robocze
     repeats = (canvas_side // cycle_height) + 2
     full_pattern = Image.new('RGB', (canvas_side, cycle_height * repeats))
     
     for i in range(repeats):
         full_pattern.paste(cycle_img, (0, i * cycle_height))
-        
-    # 6. Obrót
-    # CSS 135deg (flow top-left -> bottom-right) daje pasy "bottom-left -> top-right" (/).
-    # Poziome pasy obrócone o 45 stopni (CCW) dadzą ten efekt.
-    # Używamy expand=False, bo płótno jest już nadmiarowe, a chcemy zachować centrum.
+ 
     rotated = full_pattern.rotate(45, resample=Image.Resampling.BICUBIC, expand=False)
-    
-    # 7. Wycinamy środek o wymiarach docelowych (Center Crop)
+ 
     center_x, center_y = rotated.width // 2, rotated.height // 2
     left = center_x - w // 2
     top = center_y - h // 2
@@ -295,16 +244,12 @@ def create_waves_css(size, start_rgb, end_rgb):
 
 
 def create_liquid_css(size, start_rgb, end_rgb):
-    """
-    Symulacja CSS: linear-gradient(135deg, A 0%, B 100%)
-    """
+    
     w, h = size
     diagonal = int(math.sqrt(w**2 + h**2))
     
-    # Tworzymy pionowy gradient (A -> B) o długości przekątnej
     grad = create_gradient_vertical((diagonal, diagonal), start_rgb, end_rgb)
     
-    # Obracamy o -45 (dla 135deg)
     rotated = grad.rotate(-45, resample=Image.Resampling.BICUBIC)
     
     center_x, center_y = rotated.width // 2, rotated.height // 2
@@ -315,30 +260,22 @@ def create_liquid_css(size, start_rgb, end_rgb):
 def generate_bottom_bg_image(width, height, bg_color, end_color, theme, variant):
     rgb_start = hex_to_rgb(bg_color)
     rgb_end = hex_to_rgb(end_color)
-
-    # === 1. MOTYWY SPECJALNE (Aurora, Liquid, Waves) ===
     
     if theme == "aurora":
-        # CSS: radial-gradient(circle at 30% 30%, start, end, start)
-        # Uproszczenie: Radial Start->End. Aby "Start" był na zewnątrz też, trzebaby complex gradient.
-        # W CSS: start (0%) -> end (do pewnego momentu) -> start (100%).
-        # Zróbmy klasyczny radial z przesuniętym środkiem.
+        
         return create_radial_gradient_css((width, height), rgb_start, rgb_end, center=(0.3, 0.3))
         
     elif theme == "liquid":
-        # CSS: linear-gradient(135deg, start 0%, end 100%)
+      
         return create_liquid_css((width, height), rgb_start, rgb_end)
         
     elif theme == "waves":
-        # CSS: repeating-linear-gradient(135deg, start, end 20%, start 40%)
+      
         return create_waves_css((width, height), rgb_start, rgb_end)
         
-    # === 2. VARIANTY KLASYCZNE (Classic) ===
-    # Obsługa: vertical, horizontal, radial, diagonal
-    
     else:
         if variant == "horizontal":
-            # Generujemy pionowy mały i obracamy o 90
+       
             grad = create_gradient_vertical((height, width), rgb_start, rgb_end)
             return grad.rotate(90, expand=True)
             
@@ -346,53 +283,42 @@ def generate_bottom_bg_image(width, height, bg_color, end_color, theme, variant)
             return create_radial_gradient_css((width, height), rgb_start, rgb_end, center=(0.5, 0.5))
             
         elif variant == "diagonal":
-            # To samo co Liquid (135deg) lub standardowy linear bottom-right
+           
             return create_liquid_css((width, height), rgb_start, rgb_end)
             
         else: 
-            # Domyślnie: Vertical (to bottom)
-            # Tutaj user prosił: "kolor początkowy musi być większy".
-            # create_gradient_vertical robi liniowe przejście.
-            # Jeśli start ma dominować, w 'create_gradient_vertical' można zmienić funkcję t.
+           
             return create_gradient_vertical((width, height), rgb_start, rgb_end)
 
 
 
 def handle_bottom_data(bottom_obj, export_dir):
-    """
-    Generuje obraz tła dla sekcji bottom (tylko dolna część kalendarza).
-    """
+   
     if not bottom_obj:
         return None
 
-    # Stałe wymiary "Plecków" (dolnej sekcji)
-    width, height = 3732, 7559  # Zgodnie z Twoją prośbą (dół)
-    
-    # Jeśli export_dir nie istnieje, utwórz go
+    width, height = 3732, 7559  
     os.makedirs(export_dir, exist_ok=True)
     filename = os.path.join(export_dir, "bottom.png")
     
     generated_img = None
     return_data = {}
 
-    # --- A. OBRAZ (BottomImage) ---
+
     if hasattr(bottom_obj, 'image') and bottom_obj.image:
         image_url = bottom_obj.image.url if hasattr(bottom_obj.image, "url") else None
         if image_url:
             return {"type": "image", "url": image_url, "image_path": None} 
 
-    # --- B. KOLOR JEDNOLITY (BottomColor) ---
     elif hasattr(bottom_obj, 'color') and not hasattr(bottom_obj, 'start_color'):
         rgb = hex_to_rgb(bottom_obj.color)
         generated_img = Image.new("RGB", (width, height), rgb)
         return_data = {"type": "color", "color": bottom_obj.color}
 
-    # --- C. GRADIENT (BottomGradient) ---
     elif hasattr(bottom_obj, 'start_color'):
         theme = getattr(bottom_obj, 'theme', 'classic')
         direction = getattr(bottom_obj, 'direction', 'to bottom')
-        
-        # Mapowanie kierunków z bazy na warianty
+    
         variant = "vertical"
         if direction == "to right": variant = "horizontal"
         elif direction == "to bottom right": variant = "diagonal"
@@ -425,17 +351,11 @@ def handle_bottom_data(bottom_obj, export_dir):
     return None
 
 def generate_header(top_image_path, data, export_dir, production_id=None):
-    """
-    Generuje plik główki kalendarza jako PSD z uwzględnieniem spadów.
-    """
+
     year_data = data.get("year_data") or data.get("year")
 
-    # Stałe wymiary z Reacta (netto - obszar widoczny po obcięciu)
     REACT_WIDTH = 3720
     REACT_HEIGHT = 2430
-    
-    # HEADER_WIDTH / HEADER_HEIGHT to Twoje wymiary brutto (3960 x 2670)
-    # Upewnij się, że są zdefiniowane globalnie lub przekaż je jako argumenty
     
     if not top_image_path or not os.path.exists(top_image_path):
         print("⚠️ Brak pliku obrazu główki.")
@@ -446,8 +366,7 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
     try:
         with Image.open(top_image_path) as img:
             img = img.convert("RGBA")
-            
-            # 1. Skalujemy obraz do pełnego formatu ze spadami (brutto)
+
             img_fitted = ImageOps.fit(
                 img,
                 (HEADER_WIDTH, HEADER_HEIGHT),
@@ -457,19 +376,15 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
             if year_data:
                 draw = ImageDraw.Draw(img_fitted)
 
-                # --- OBLICZANIE OFFSETU (SPADÓW) ---
-                # Różnica między wymiarem brutto a netto, podzielona na 2 (lewo/góra)
                 bleed_offset_x = (HEADER_WIDTH - REACT_WIDTH) / 2
                 bleed_offset_y = (HEADER_HEIGHT - REACT_HEIGHT) / 2
-                
-                # Pobieramy pozycję z Reacta i dodajemy offset
+
                 raw_x = float(year_data.get("positionX", 50))
                 raw_y = float(year_data.get("positionY", 50))
                 
                 pos_x = int(raw_x + bleed_offset_x)
                 pos_y = int(raw_y + bleed_offset_y)
 
-                # Reszta parametrów bez zmian
                 text_content = str(year_data.get("text", "2026"))
                 font_size = int(float(year_data.get("size", 400)))
                 text_color = year_data.get("color", "#FFFFFF")
@@ -477,8 +392,6 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
                 weight_raw = str(year_data.get("weight", "normal")).lower()
                 is_bold = weight_raw in ["bold", "700", "800", "900", "bolder"]
                 font_name = str(year_data.get("font", "arial"))
-                
-                # Używamy Twojej poprawionej funkcji load_font
                 font = load_font(font_name, font_size)
 
                 stroke_w = int(font_size * 0.025) if is_bold else 0
@@ -499,9 +412,8 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
                     stroke_fill=text_color,
                 )
 
-            # Zapis
             img_rgb = img_fitted.convert("RGB")
-            saved_path = save_as_psd(img_rgb, output_path) # Używamy Twojej funkcji _save_as_psd
+            saved_path = save_as_psd(img_rgb, output_path) 
 
             print(f"✅ Główka: {saved_path} ({HEADER_WIDTH}×{HEADER_HEIGHT} px)")
             return saved_path
@@ -511,12 +423,7 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
         return None
     
 def generate_backing(data, export_dir, production_id=None):
-    """
-    Generuje plik pleców kalendarza jako PSD.
-
-    Returns:
-        str | None: ścieżka do zapisanego pliku
-    """
+  
     bottom_data = data.get("bottom", {})
     template_image_path = bottom_data.get("image_path") if bottom_data else None
 
@@ -530,22 +437,16 @@ def generate_backing(data, export_dir, production_id=None):
     try:
         base_img = Image.new("RGB", (BACKING_WIDTH, BACKING_HEIGHT), "white")
 
-        # --- TŁO ---
         if template_image_path and os.path.exists(template_image_path):
             with Image.open(template_image_path) as src_bg:
                 bg_layer = src_bg.convert("RGBA")
-                
-                # Obliczamy wysokość obszaru na tło (całość minus pasek górny)
                 bg_height = BACKING_HEIGHT - H_CONNECT
-
-                # Skalujemy grafikę, aby wypełniła tylko dolną część (pod paskiem)
                 bg_layer = ImageOps.fit(
                     bg_layer,
                     (BACKING_WIDTH, bg_height),
                     method=Image.Resampling.LANCZOS,
                 )
                 
-                # Wklejamy tło przesunięte w dół o H_CONNECT
                 base_img.paste(bg_layer, (0, H_CONNECT))
                 print(f"🖼️ Tło pleców wklejone (start Y: {H_CONNECT} px)")
         else:
@@ -553,9 +454,8 @@ def generate_backing(data, export_dir, production_id=None):
 
         draw = ImageDraw.Draw(base_img)
 
-            # --- 3 SEGMENTY ---
         raw_fields = data.get("fields", {})
-        y = H_CONNECT + 120  # biały pasek + odstęp
+        y = H_CONNECT + 120  
 
         H_AD_STRIP_NEW = 360
         GAP_AFTER_CAL = 90
@@ -588,10 +488,9 @@ def generate_backing(data, export_dir, production_id=None):
                 g_text, font=g_font, fill="#9ca3af",
             )
 
-            # Pozycja paska reklamowego: po kalendarium + odstęp 90px
+         
             ad_y = cal_y + H_MONTH_BOX + GAP_AFTER_CAL
 
-            # PASEK REKLAMOWY
             strip_img = Image.new("RGBA", (AD_CONTENT_WIDTH, H_AD_STRIP_NEW), (255, 255, 255, 0))
             strip_draw = ImageDraw.Draw(strip_img)
 
@@ -637,28 +536,24 @@ def generate_backing(data, export_dir, production_id=None):
                         current_line = ""
                         
                         for char in text:
-                            # Tworzymy linię testową dodając jeden znak
                             test_line = current_line + char
                             tl_test, _, tr_test, _ = strip_draw.textbbox((0, 0), test_line, font=font_ad, stroke_width=stroke_width)
                             test_width_current = tr_test - tl_test
-                            
-                            # Jeśli po dodaniu znaku szerokość jest ok, akceptujemy
+
                             if test_width_current <= max_width:
                                 current_line = test_line
                             else:
-                                # Jeśli przekracza, zapisujemy to co mieliśmy do tej pory
+                               
                                 if current_line:
                                     lines.append(current_line)
-                                # I zaczynamy nową linię od tego znaku, który się nie zmieścił
+                            
                                 current_line = char
-                        
-                        # Dodajemy ostatnią pozostałą linię (resztówkę)
+
                         if current_line:
                             lines.append(current_line)
                             
                         final_text = "\n".join(lines)
-                        
-                        # --- SEKCJA DEBUGOWANIA (PRINTY) ---
+
                         print("="*40)
                         print(f"⚠️ Tekst za szeroki ({text_width}px > {max_width}px). Podzielono na {len(lines)} linie (cięcie po znakach):")
                         for i, line in enumerate(lines):
@@ -667,25 +562,21 @@ def generate_backing(data, export_dir, production_id=None):
                         # -----------------------------------
                         
                     else:
-                        # Tekst mieści się w jednej linii
+                        
                         final_text = text
                         print(f"✅ Tekst mieści się w jednej linii. Brak dzielenia.")
 
-                    # Pobieramy wymiary całego bloku (obsługuje \n dla wieloliniowego)
                     tl, tt, tr, tb = strip_draw.textbbox((0, 0), final_text, font=font_ad, stroke_width=stroke_width)
-                    
-                    # Obliczamy pozycje X i Y (z wyrównaniem na środek paska)
+
                     txt_x = (AD_CONTENT_WIDTH - (tr - tl)) / 2 - tl
                     txt_y = (H_AD_STRIP_NEW - (tb - tt)) / 2 - tt
 
-                    # Rysowanie z wyśrodkowaniem tekstu
                     strip_draw.multiline_text(
                         (txt_x, txt_y), final_text, font=font_ad,
                         fill=text_color, stroke_width=stroke_width, stroke_fill=text_color,
                         align="center"
                     )
 
-            # Obrazki w pasku
             for key, val in raw_fields.items():
                 if not isinstance(val, dict):
                     continue
@@ -711,19 +602,15 @@ def generate_backing(data, export_dir, production_id=None):
 
             base_img.paste(strip_img, (AD_PADDING_X, ad_y), strip_img)
 
-            # Przesunięcie Y na następny segment
             if i < 3:
                 y = ad_y + H_AD_STRIP_NEW + GAP_AFTER_AD
             else:
                 y = ad_y + H_AD_STRIP_NEW + GAP_AFTER_AD_LAST
 
-           
-
-        # --- ZAPIS JAKO PSD ---
+     
         saved_path = save_as_psd(base_img, output_path)
         print(f"✅ Plecy: {saved_path} ({BACKING_WIDTH}×{BACKING_HEIGHT} px = 321×641 mm)")
 
-        # Cleanup tła
         if template_image_path:
             temp_dir = os.path.dirname(os.path.normpath(template_image_path))
             if os.path.abspath(temp_dir) != os.path.abspath(export_dir):
@@ -741,33 +628,21 @@ def generate_backing(data, export_dir, production_id=None):
 
 
 def generate_calendar(data, top_image_path=None, upscaled_top_path=None, production_id=None):
-    """
-    Generuje kalendarz trójdzielny jako DWA osobne pliki PSD
-    w folderze: calendar_{production_id}_{kod}/
-
-    Pliki:
-      header_{id}.psd   — główka  3957 × 2658 px (335 × 225 mm)
-      backing_{id}.psd  — plecy   3789 × 7572 px (321 × 641 mm)
-
-    Returns:
-        dict: {"header": ścieżka, "backing": ścieżka, "export_dir": folder}
-    """
-    # 1. Tworzenie folderu eksportu
     export_dir = create_export_folder(production_id)
 
     result = {"header": None, "backing": None, "export_dir": export_dir}
 
-    # 2. Główka
+  
     header_source = upscaled_top_path or top_image_path
     if header_source:
         result["header"] = generate_header(header_source, data, export_dir, production_id)
     else:
         print("⚠️ Brak obrazu na główkę — pomijam.")
 
-    # 3. Plecy
+ 
     result["backing"] = generate_backing(data, export_dir, production_id)
 
-    # Podsumowanie
+   
     print("\n" + "=" * 50)
     print(f"📋 KALENDARZ #{production_id}")
     print(f"   📁 Folder:  {export_dir}")

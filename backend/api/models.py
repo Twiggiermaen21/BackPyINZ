@@ -33,32 +33,21 @@ class Calendar(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     name = models.CharField(max_length=100, default="new calendar")
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    top_image = models.ForeignKey(
-        'GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_top_image"
-    )
-
-    # Rok
-    year_data = models.OneToOneField(
-        "CalendarYearData", on_delete=models.SET_NULL, null=True,  blank=True, related_name="calendar_year_data"
-    )
-
-    # Pola ogólne (GenericForeignKey)
+    top_image = models.ForeignKey( 'GeneratedImage', on_delete=models.SET_NULL, null=True, blank=True, related_name="calendar_top_image")
+    year_data = models.OneToOneField("CalendarYearData", on_delete=models.SET_NULL, null=True,  blank=True, related_name="calendar_year_data")
     field1_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     field1_object_id = models.PositiveIntegerField(null=True, blank=True)
     field1 = GenericForeignKey("field1_content_type", "field1_object_id")
-
     field2_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     field2_object_id = models.PositiveIntegerField(null=True, blank=True)
     field2 = GenericForeignKey("field2_content_type", "field2_object_id")
-
     field3_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     field3_object_id = models.PositiveIntegerField(null=True, blank=True)
     field3 = GenericForeignKey("field3_content_type", "field3_object_id")
-
-    # Dolna część kalendarza (GenericForeignKey zamiast kilku pól)
     bottom_content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     bottom_object_id = models.PositiveIntegerField(null=True, blank=True)
     bottom = GenericForeignKey("bottom_content_type", "bottom_object_id")
+
 class CalendarProduction(models.Model):
     STATUS_CHOICES = (
         ("draft", "Projekt"),
@@ -71,28 +60,12 @@ class CalendarProduction(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    author = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True
-    )
-
-    calendar = models.ForeignKey(Calendar, on_delete=models.CASCADE
-        ,
-        related_name="production"
-    )
-
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="draft"
-    )
-
-    # produkcyjne dane
-    quantity = models.PositiveIntegerField(default=1)  # ilość egzemplarzy
-    deadline = models.DateField(null=True, blank=True)  # termin produkcji
+    author = models.ForeignKey(  User, on_delete=models.SET_NULL, null=True, blank=True)
+    calendar = models.ForeignKey(Calendar, on_delete=models.CASCADE ,related_name="production")
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default="draft")
+    quantity = models.PositiveIntegerField(default=1)  
+    deadline = models.DateField(null=True, blank=True)  
     production_note = models.TextField(blank=True)
-    
-    # kiedy faktycznie zakończono
     finished_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
@@ -102,14 +75,10 @@ class CalendarMonthFieldText(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     text = models.CharField(max_length=255)
-    
-    # Istniejące pola
-    font = models.CharField(max_length=100, blank=True, null=True)   # fontFamily
-    weight = models.CharField(max_length=50, blank=True, null=True)  # fontWeight
-    
-    # Nowe pola
-    color = models.CharField(max_length=50, default="#000000", help_text="Np. #000000 lub rgba(...)") # fontColor
-    size = models.CharField(max_length=20, blank=True, null=True)    # fontSize
+    font = models.CharField(max_length=100, blank=True, null=True)   
+    weight = models.CharField(max_length=50, blank=True, null=True)  
+    color = models.CharField(max_length=50, default="#000000", help_text="Np. #000000 lub rgba(...)") 
+    size = models.CharField(max_length=20, blank=True, null=True)    
 class CalendarMonthFieldImage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

@@ -2,7 +2,7 @@ from rest_framework.pagination import PageNumberPagination
 from  rest_framework.response import Response
 
 class CalendarPagination(PageNumberPagination):
-    page_size = 5  # ile elementów na stronę
+    page_size = 5  
     page_size_query_param = "page_size"
     max_page_size = 50
 
@@ -13,13 +13,13 @@ class CalendarPagination(PageNumberPagination):
             'next': next_page,
             'previous': self.get_previous_link(),
             'results': data,
-            'has_more': bool(next_page),  # True jeśli jest kolejna strona
+            'has_more': bool(next_page), 
         })
 
 
 
 class ImagesPagination(PageNumberPagination):
-    page_size = 20  # ile elementów na stronę
+    page_size = 20  
     page_size_query_param = "page_size"
     max_page_size = 50
 
@@ -31,5 +31,5 @@ class ImagesPagination(PageNumberPagination):
             'next': next_page,
             'previous': self.get_previous_link(),
             'results': data,
-            'has_more': bool(next_page),  # True jeśli jest kolejna strona
+            'has_more': bool(next_page),  
         })

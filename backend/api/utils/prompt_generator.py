@@ -1,5 +1,3 @@
-
-
 def generate_custom_prompt(
     baseprompt,
     inspiration=None,
@@ -15,15 +13,14 @@ def generate_custom_prompt(
 ):
     special_text = "Please generate a creative, visually rich theme for an illustration. Provide only the theme in 3–6 words, no extra explanation."
 
-    # Tworzymy początek promptu
     if baseprompt and baseprompt != special_text:
         prompt = (
             f"Create a complete and visually rich illustration inspired by the theme: {baseprompt}. "
         )
     else:
-        prompt = ""  # jeśli baseprompt jest None lub specjalnym tekstem, pomijamy początek
+        prompt = ""  
 
-    # Reszta instrukcji zawsze
+
     prompt += (
         "Explore various artistic styles such as surrealist, watercolor, digital painting, retro-futurism, brutalism, baroque, minimalist, or others, and choose the one that best fits the theme. "
         "Emphasize the following aspects: "
@@ -74,7 +71,7 @@ def get_detailed_prompt_from_model(
     temperature: float = 0.7,
     stream: bool = False
 ):
-    # Generujemy "surowe" dane wejściowe z Twojej funkcji pomocniczej
+ 
     raw_attributes = generate_custom_prompt(
         baseprompt=base_prompt,
         inspiration=inspiration,
@@ -89,7 +86,6 @@ def get_detailed_prompt_from_model(
         styl_narracyjny=styl_narracyjny
     )
 
-    # Zmiana 1: Dodanie instrukcji o tłumaczeniu w zadaniu użytkownika
     user_instruction = (
         f"Input Data (mixed English and Polish):\n{raw_attributes}\n\n"
         "Task: First, translate all Polish words and concepts into English. "
@@ -99,7 +95,6 @@ def get_detailed_prompt_from_model(
         "Do not list the requirements, just write the final visual description."
     )
 
-    # Zmiana 2: Aktualizacja ról systemowych (CRITICAL RULES)
     messages = [
         {
             "role": "system",

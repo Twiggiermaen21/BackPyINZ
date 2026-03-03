@@ -22,7 +22,7 @@ from ..utils.services import (
     handle_top_image)
 from ..utils.upscaling import upscale_image_with_bigjpg
 import zipfile
-
+from django.db import close_old_connections 
 
 class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Calendar.objects.all()
@@ -30,8 +30,6 @@ class CalendarDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # ograniczamy do kalendarzy użytkownika
-        
         return Calendar.objects.filter(author=self.request.user)
 
 class CalendarUpdateView(generics.RetrieveUpdateAPIView):
@@ -47,12 +45,10 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
         calendar = self.get_object()
         old_calendar = Calendar.objects.get(author=self.request.user, id=kwargs["pk"])
 
-        # kopia danych (dla bezpieczeństwa, QueryDict -> dict)
         data = request.data.copy()
         serializer = self.get_serializer(calendar, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
 
-        # teraz konwersja ID → obiekt po walidacji
         top_image_id = serializer.validated_data.get("top_image")
         if isinstance(top_image_id, (int, str)):
             try:
@@ -63,12 +59,7 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         
-        
-
-        # faktyczny update
         serializer.save()
-
-         # --- AKTUALIZACJA POWIĄZANEGO YEAR_DATA ---
         year_data = old_calendar.year_data_id
         if year_data:
             try:
@@ -82,7 +73,6 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
             year_data_raw = data.get("year_data")
 
             if year_data_raw:
-            # --- 1️⃣ Jeśli przyszło jako string JSON, parsujemy ---
                 if isinstance(year_data_raw, str):
                     try:
                         year_data_obj = json.loads(year_data_raw)
@@ -92,15 +82,12 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                 else:
-                    # już jest dict (np. przy JSON body zamiast FormData)
                     year_data_obj = year_data_raw
                     
-        # --- 4️⃣ Aktualizujemy pola ---
                 for field in ["text", "font", "weight", "size", "color", "positionX", "positionY"]:
                     if field in year_data_obj:
                         setattr(year_data, field, year_data_obj[field])
 
-                # --- 5️⃣ Zapis do bazy ---
                 year_data.save()
         
     
@@ -110,25 +97,13 @@ class CalendarUpdateView(generics.RetrieveUpdateAPIView):
 class CalendarByProjectView(generics.ListAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-    
-    # lookup_url_kwarg jest używany głównie w RetrieveAPIView (do pobrania jednego obiektu),
-    # ale w ListAPIView pobieramy go ręcznie w get_queryset, więc ta linijka jest opcjonalna,
-    # choć nie szkodzi.
     lookup_url_kwarg = "project_name"
 
     def get_queryset(self):
         user = self.request.user
         project_name = self.kwargs.get("project_name")
+        qs = Calendar.objects.filter(  author=user, name=project_name  )
 
-        # 1. Filtrowanie po autorze i nazwie projektu
-        qs = Calendar.objects.filter(
-            author=user,
-            name=project_name
-        )
-
-        # 2. select_related
-        # Pobieramy relacje FK oraz ContentType, aby Django wiedziało od razu,
-        # w jakich tabelach szukać danych dla GenericForeignKey.
         qs = qs.select_related(
             "top_image",
             "year_data",
@@ -138,11 +113,7 @@ class CalendarByProjectView(generics.ListAPIView):
             "bottom_content_type",
         )
 
-        # 3. prefetch_related
-        # Wystarczy podać nazwy pól GenericForeignKey.
-        # Django automatycznie pobierze dane z odpowiednich tabel (Text/Image dla fieldX,
-        # oraz Color/Image/Gradient dla bottom) i przypisze je do obiektów.
-        # Usuwamy 'to_attr' i sztywne QuerySety, bo ograniczałyby one typy pól.
+
         qs = qs.prefetch_related(
             "field1",
             "field2",
@@ -155,15 +126,10 @@ class CalendarByProjectView(generics.ListAPIView):
 class CalendarByIdView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = "pk"  # Domyślne, ale dla jasności zostawiamy
+    lookup_field = "pk" 
 
     def get_queryset(self):
-        # 1. Podstawowe filtrowanie po autorze
-        # Nie musisz filtrować po ID tutaj - RetrieveAPIView zrobi to automatycznie na końcu
         qs = Calendar.objects.filter(author=self.request.user)
-
-        # 2. select_related
-        # Pobieramy relacje 1-do-1 oraz ContentType dla pól generycznych
         qs = qs.select_related(
             "top_image",
             "year_data",
@@ -173,14 +139,11 @@ class CalendarByIdView(generics.RetrieveAPIView):
             "bottom_content_type",
         )
 
-        # 3. prefetch_related
-        # Wystarczy podać nazwy pól. Django automatycznie sprawdzi ContentType
-        # i pobierze odpowiednie obiekty (CalendarMonthFieldText LUB CalendarMonthFieldImage)
         qs = qs.prefetch_related(
             "field1",
             "field2",
             "field3",
-            "bottom"  # To obsłuży BottomImage, BottomColor i BottomGradient
+            "bottom" 
         )
 
         return qs
@@ -192,10 +155,7 @@ class CalendarCreateView(generics.ListCreateAPIView):
     pagination_class = CalendarPagination 
 
     def get_queryset(self):
-        # 1. select_related
-        # Pobieramy "sztywne" relacje oraz ContentType dla pól generycznych.
-        # Pobranie *_content_type tutaj zapobiega dodatkowym zapytaniom SQL,
-        # gdy Django będzie sprawdzać, z jakiej tabeli pobrać field1, field2 itd.
+       
         qs = Calendar.objects.filter(author=self.request.user).select_related(
             "top_image",
             "year_data",
@@ -205,22 +165,13 @@ class CalendarCreateView(generics.ListCreateAPIView):
             "bottom_content_type",
         ).order_by("-created_at")
 
-        # 2. prefetch_related
-        # Usuwamy ImageForField, bo już go nie ma.
-        # Usuwamy ręczne obiekty Prefetch z hardcodowanymi typami (np. field1 jako Text).
-        #
-        # Podając po prostu nazwy pól GenericForeignKey ("field1", "field2" itd.),
-        # Django automatycznie:
-        # a) Zbierze ID i ContentType dla każdego wiersza.
-        # b) Zrobi jedno zapytanie do tabeli Text (dla rekordów tekstowych).
-        # c) Zrobi jedno zapytanie do tabeli Image (dla rekordów obrazkowych).
-        # d) "Sklei" to w Pythonie.
+        
         
         qs = qs.prefetch_related(
             "field1",
             "field2",
             "field3",
-            "bottom"  # To obsłuży automatycznie BottomImage, BottomColor, BottomGradient
+            "bottom"  
         )
 
         return qs
@@ -235,27 +186,23 @@ class CalendarCreateView(generics.ListCreateAPIView):
 
         if image_from_disk:
             if image_from_disk:
-                if hasattr(top_image_value, "read"):  # UploadedFile
-                    # odczyt obrazu bez zapisu na dysku
+                if hasattr(top_image_value, "read"):  
+                    
                     file_bytes = top_image_value.read()
                     filename = f"generated_{uuid.uuid4().hex}.png"
-                    # odczyt wymiarów z pamięci
+                    
                     from PIL import Image
                     import io
 
                     with Image.open(io.BytesIO(file_bytes)) as img:
                         width, height = img.size
-                        
 
-                    # upload bezpośrednio z pamięci
                     generated_url = upload_image(
-                        file_bytes,                    # bytes zamiast ścieżki
+                        file_bytes,                    
                         "generated_images",
                         filename
                     )
                     
-
-                    # zapis w DB
                     image_instance = GeneratedImage.objects.create(
                         author=user,
                         width=width,
@@ -266,7 +213,6 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 else:
                     raise ValidationError({"top_image": "Niepoprawny plik"})
         else:
-            # Pobieramy istniejący GeneratedImage po ID
             try:
                 image_instance = GeneratedImage.objects.get(id=top_image_value)
                 top_image_value = image_instance
@@ -326,13 +272,9 @@ class CalendarCreateView(generics.ListCreateAPIView):
         for i in range(1, 4):
             field_key = f"field{i}"
             file_key = f"field{i}_image"
-            
-            # 1. Pobieramy metadane (JSON) o ułożeniu/treści
-            # Zakładamy, że dla jednego pola przychodzi jeden główny obiekt konfiguracji
             raw_data = data.get(field_key)
             item_data = {}
 
-            # Parsowanie JSON (jeśli to string)
             if raw_data:
                 if isinstance(raw_data, str):
                     try:
@@ -342,16 +284,12 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 elif isinstance(raw_data, dict):
                     item_data = raw_data
 
-            # 2. Obsługa obrazka (Upload pliku LUB ścieżka z JSON)
             uploaded_file = self.request.FILES.get(file_key)
-            final_image_path = item_data.get("image")  # Domyślnie to, co przyszło w JSON (np. obrazek z galerii)
+            final_image_path = item_data.get("image")  
 
-            # Jeśli użytkownik wgrał nowy plik, ma on priorytet i nadpisuje path
             if uploaded_file:
                 file_bytes = uploaded_file.read()
                 filename = f"generated_{uuid.uuid4().hex}.png"
-                
-                # Uploadujemy TUTAJ, zanim stworzymy obiekt w bazie
                 generated_url = upload_image(
                     file_bytes,
                     "generated_images",
@@ -359,11 +297,8 @@ class CalendarCreateView(generics.ListCreateAPIView):
                 )
                 final_image_path = generated_url
 
-            # 3. Tworzenie odpowiedniego obiektu (Tekst lub Obraz)
             field_obj = None
-
-            # Przypadek A: To jest tekst
-            if "text" in item_data and not uploaded_file: # file ma priorytet bycia obrazkiem
+            if "text" in item_data and not uploaded_file:
                 field_obj = CalendarMonthFieldText.objects.create(
                     author=user,
                     text=item_data["text"],
@@ -373,21 +308,19 @@ class CalendarCreateView(generics.ListCreateAPIView):
                     size=item_data.get("font", {}).get("fontSize"),
                 )
 
-            # Przypadek B: To jest obrazek (z uploadu lub z JSONa)
+         
             elif final_image_path:
                 field_obj = CalendarMonthFieldImage.objects.create(
                     author=user,
-                    path=final_image_path,  # Tutaj trafia URL z uploadu lub z JSON
+                    path=final_image_path,  
                     size=item_data.get("scale"),
                     positionX=item_data.get("positionX"),
                     positionY=item_data.get("positionY"),
                 )
 
-            # 4. Podpięcie pod Kalendarz (GenericForeignKey)
+      
             if field_obj:
                 ct = ContentType.objects.get_for_model(field_obj)
-                
-                # Ustawiamy content_type i object_id dynamicznie dla danego pola (field1/2/3)
                 setattr(calendar, f"{field_key}_content_type", ct)
                 setattr(calendar, f"{field_key}_object_id", field_obj.id)
                 calendar.save()
@@ -397,14 +330,12 @@ class CalendarSearchBarView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     pagination_class = None 
 
-
     def get_queryset(self):
         
         return Calendar.objects.filter(
             author=self.request.user,
                 ).order_by("-created_at")
-from django.db import close_old_connections # Dodaj ten import na górze pliku
-# ... inne Twoje importy ...
+
 
 class CalendarPrint(generics.CreateAPIView): 
 
@@ -415,16 +346,13 @@ class CalendarPrint(generics.CreateAPIView):
             if not calendar_id:
                 return Response({"error": "Brak id_kalendarz"}, status=400)
 
-            # 1. Pobranie kalendarza z bazy
             calendar = fetch_calendar_data(calendar_id)
             if not calendar:
                 return Response({"error": f"Nie znaleziono kalendarza {calendar_id}"}, status=404)
 
-            # 2. Folder tymczasowy na pobrane pliki (upscaling itp.)
             temp_dir = os.path.join(settings.MEDIA_ROOT, "calendar_temp", str(uuid.uuid4()))
             os.makedirs(temp_dir, exist_ok=True)
 
-            # 3. Przygotowanie danych
             data = {
                 "calendar_id": calendar.id,
                 "author": str(calendar.author),
@@ -438,7 +366,6 @@ class CalendarPrint(generics.CreateAPIView):
             data["top_image"] = handle_top_image(calendar, temp_dir)
             data["bottom"] = handle_bottom_data(calendar.bottom, temp_dir)
 
-            # Pola reklamowe
             all_fields = []
             for i in range(1, 4):
                 all_fields.append((getattr(calendar, f"field{i}", None), i))
@@ -447,20 +374,16 @@ class CalendarPrint(generics.CreateAPIView):
             for field_obj, field_name in all_fields:
                 data["fields"][field_name] = handle_field_data(field_obj, field_name, temp_dir)
 
-            # 4. Upscaling główki
             upscaled_header_path = None
             if data["top_image"]:
                 result = upscale_image_with_bigjpg(data["top_image"], temp_dir, 4)
                 upscaled_header_path = result["local_upscaled"]
 
-            # 5. Upscaling tła pleców (jeśli obraz)
             if data["bottom"] and data["bottom"].get("type") == "image":
                 result = upscale_image_with_bigjpg(data["bottom"]["url"], temp_dir, 8)
                 data["bottom"]["image_path"] = result["local_upscaled"]
 
-            # =====================================================
-            # 6. GENEROWANIE KALENDARZA
-            # =====================================================
+
             calendar_files = generate_calendar(
                 data=data,
                 top_image_path=data["top_image"],
@@ -468,11 +391,7 @@ class CalendarPrint(generics.CreateAPIView):
                 production_id=production_id,
             )
 
-            # =====================================================
-            # 7. Aktualizacja statusu produkcji (TUTAJ JEST ZMIANA)
-            # =====================================================
-            # Ponieważ upscaling i generowanie PSD mogło zająć minuty,
-            # musimy upewnić się, że Django ma "świeże" połączenie z bazą.
+
             close_old_connections()
             
             try:
@@ -484,7 +403,7 @@ class CalendarPrint(generics.CreateAPIView):
             except CalendarProduction.DoesNotExist:
                 print(f"⚠️ Nie znaleziono produkcji {production_id}")
 
-            # 8. Cleanup temp
+
             try:
                 shutil.rmtree(temp_dir)
             except OSError:
@@ -498,7 +417,6 @@ class CalendarPrint(generics.CreateAPIView):
             })
 
         except Exception as e:
-            # Upewniamy się, że w razie błędu też możemy bezpiecznie zaktualizować bazę
             close_old_connections()
             print(f"❌ Błąd: {e}")
             import traceback
@@ -568,18 +486,11 @@ class StaffCalendarProductionRetrieveUpdate(generics.RetrieveUpdateAPIView):
 
 class CalendarByIdStaffView(generics.RetrieveAPIView):
     serializer_class = CalendarSerializer
-    # Jeśli to widok dla obsługi, warto rozważyć IsAdminUser, 
-    # ale zostawiam IsAuthenticated zgodnie z Twoim kodem.
     permission_classes = [IsAuthenticated] 
     lookup_field = "pk"
 
     def get_queryset(self):
-        # 1. Pobieramy wszystkie kalendarze (zakładamy, że staff może widzieć wszystko)
         qs = Calendar.objects.all()
-
-        # 2. select_related
-        # Optymalizacja zapytań SQL dla kluczy obcych i typów zawartości.
-        # Pobranie *_content_type jest kluczowe dla wydajności GenericForeignKey.
         qs = qs.select_related(
             "top_image",
             "year_data",
@@ -589,20 +500,12 @@ class CalendarByIdStaffView(generics.RetrieveAPIView):
             "bottom_content_type",
         )
 
-        # 3. prefetch_related
-        # Usuwamy ręczne definiowanie querysetów (np. wymuszanie Text dla field1).
-        # Podając same nazwy pól, Django automatycznie sprawdzi, czy w danym wierszu
-        # jest Tekst czy Obrazek i pobierze odpowiedni obiekt.
-        # To samo dotyczy pola 'bottom' (Image/Color/Gradient).
         qs = qs.prefetch_related(
             "field1",
             "field2",
             "field3",
             "bottom"
         )
-        
-        # Usunięto: imageforfield_set (model nie istnieje)
-
         return qs
     
 
@@ -610,11 +513,9 @@ class DownloadCalendarStaffView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, pk, format=None):
-        # 1. Budujemy poprawną ścieżkę: media/calendar_exports/calendar_{pk}
         calendar_dir = os.path.join(settings.MEDIA_ROOT, 'calendar_exports', f"calendar_{pk}")
 
         if not os.path.exists(calendar_dir) or not os.path.isdir(calendar_dir):
-            # Debug w konsoli, żebyś wiedział co się dzieje
             print(f"BŁĄD: Nie znaleziono folderu: {calendar_dir}")
             raise Http404(f"Nie znaleziono folderu dla kalendarza: calendar_{pk}")
 

@@ -30,7 +30,6 @@ class GenerateImage(generics.ListCreateAPIView):
         print(f"👤 Użytkownik: {user}")
         print(f"🧠 Prompt: {prompt}")
 
-        # Pobieramy ID (mogą być None)
         inspiration_id = data.get('inspiracja')
         composition_id = data.get('kompozycja')
         color_id = data.get('kolorystyka')
@@ -56,7 +55,6 @@ class GenerateImage(generics.ListCreateAPIView):
             "styl_narracyjny": styl_narracyjny_id,
         })
 
-        # Pobieramy obiekty powiązane tylko jeśli istnieje ID
         inspiration = Inspiracja.objects.filter(id=inspiration_id).first() if inspiration_id else None
         composition = Kompozycja.objects.filter(id=composition_id).first() if composition_id else None
         color = Kolorystyka.objects.filter(id=color_id).first() if color_id else None
@@ -82,7 +80,6 @@ class GenerateImage(generics.ListCreateAPIView):
             "styl_narracyjny": styl_narracyjny.nazwa if styl_narracyjny else None,
         })
 
-        # Przygotowanie danych do funkcji generate_image_from_prompt
         try:
             print("⚙️ Wywołuję generate_image_from_prompt()...")
             image_bytes = generate_image_from_prompt(
@@ -114,7 +111,6 @@ class GenerateImage(generics.ListCreateAPIView):
             print("❌ Błąd podczas uploadu obrazu:", str(e))
             raise
 
-        # Zapisujemy instancję
         self.generated_instance = serializer.save(
             author=user,
             prompt=prompt,
@@ -147,20 +143,13 @@ class GenerateImage(generics.ListCreateAPIView):
         }, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
-        # Pobranie użytkownika
         user = self.request.user
-        
-        # Pobranie parametru z query params
         project_name = self.request.query_params.get('project_name', None)
-        
-        # Podstawowy queryset dla danego użytkownika
+
         queryset = GeneratedImage.objects.filter(author=user)
-        
-        # Jeśli podano project_name, filtruj też po nazwie projektu
+ 
         if project_name:
             queryset = queryset.filter(project__name=project_name)
-        
-        # Posortuj malejąco po dacie utworzenia
         return queryset.order_by('-created_at')
     
     
@@ -174,14 +163,11 @@ class ImagesByProjectView(generics.ListAPIView):
         user = self.request.user
         project_name = self.kwargs.get("project_name")
 
-        # Podstawowy queryset dla użytkownika
         qs = GeneratedImage.objects.filter(author=user)
 
-        # Filtr po nazwie projektu, jeśli podano
         if project_name:
             qs = qs.filter(name=project_name)
 
-        # Posortuj malejąco po dacie utworzenia
         return qs.order_by("-created_at")
 class ImageSearchBarView(generics.ListAPIView):
     serializer_class = ImageSearchSerializer

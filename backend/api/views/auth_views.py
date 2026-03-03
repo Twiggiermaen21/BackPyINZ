@@ -21,7 +21,6 @@ User = get_user_model()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 from django.utils.encoding import force_str
-
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
@@ -36,7 +35,6 @@ class UpdateProfileImageView(generics.UpdateAPIView):
         if not new_image:
             return response.Response({"error": "Brak pliku."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 🧹 Usunięcie starego zdjęcia z Cloudinary, jeśli istnieje
         old_image = profile.profile_image
         if old_image and hasattr(old_image, "public_id"):
             try:
@@ -44,7 +42,6 @@ class UpdateProfileImageView(generics.UpdateAPIView):
             except Exception as e:
                 print("⚠️ Błąd przy usuwaniu starego zdjęcia:", e)
 
-        # 📤 Zapis nowego zdjęcia — automatyczny upload do Cloudinary
         profile.profile_image = new_image
         profile.save()
 
@@ -61,8 +58,6 @@ class ActivateUserView(generics.ListCreateAPIView):
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({"detail": "Nieprawidłowy link aktywacyjny."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ZMIANA: Jeśli konto jest już aktywne, zwracamy 200 (Sukces), a nie błąd.
-        # Dzięki temu frontend wyświetli "Sukces" zamiast czerwonego błędu przy drugim kliknięciu.
         if user.is_active:
             return Response({"detail": "Konto jest już aktywne. Możesz się zalogować."}, status=status.HTTP_200_OK)
 
@@ -86,28 +81,24 @@ class CreateUserView(generics.ListCreateAPIView):
             user = serializer.save(is_active=False)
             print("👤 Utworzono użytkownika:", user.username)
 
-            # Generowanie tokenu aktywacyjnego
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             activation_link = f"http://localhost:5173/activate-account/{uid}/{token}/"
-
-            # --- ŁADOWANIE SZABLONU Z PLIKU ---
             context = {
                 'user': user,
                 'activation_link': activation_link
             }
-            # Upewnij się, że ścieżka odpowiada lokalizacji Twojego pliku
+           
             html_content = render_to_string('activation_email.html', context)
 
-            # Wysyłamy maila
+         
             send_mail(
                 subject="Aktywacja konta",
-                # Wersja tekstowa (fallback) dla klientów bez HTML
                 message=f"Witaj {user.username}. Kliknij w link aby aktywować swoje konto: {activation_link}",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
                 fail_silently=False,
-                html_message=html_content  # Przekazujemy wyrenderowany HTML
+                html_message=html_content  
             )
             print("📧 Wysłano maila aktywacyjnego na:", user.email)
 
@@ -163,37 +154,30 @@ class PasswordResetView(generics.ListCreateAPIView):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            # Ze względów bezpieczeństwa zawsze zwracamy 200 OK, nawet jak user nie istnieje
             return response.Response({"detail": "Email wysłany, jeśli użytkownik istnieje"}, status=200)
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         
-        # Link do Twojego frontendu
         reset_link = f"http://localhost:5173/reset-password/{uid}/{token}/"
         
-        # --- TWORZENIE MAILA HTML ---
         subject = "Reset hasła w Twojej Aplikacji"
-        
-        # Przekazujemy zmienne do szablonu
+
         context = {
             "reset_link": reset_link,
-            "user": user, # Opcjonalnie, jeśli chcesz użyć np. user.first_name w mailu
+            "user": user, 
         }
-        
-        # Renderowanie HTML do stringa
+
         html_message = render_to_string('reset_password_email.html', context)
-        
-        # Tworzenie wersji czysto tekstowej (dla anty-spamu i starych klientów)
         plain_message = strip_tags(html_message)
 
         send_mail(
             subject=subject,
-            message=plain_message, # Wersja tekstowa
+            message=plain_message, 
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[email],
             fail_silently=False,
-            html_message=html_message # Wersja HTML (ładna)
+            html_message=html_message 
         )
 
         return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
@@ -203,7 +187,7 @@ class PasswordResetConfirmView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        print(request.data)  # <-- sprawdź, co faktycznie przychodzi
+        print(request.data)  
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -239,8 +223,6 @@ class GoogleAuthView(generics.ListCreateAPIView):
                     last_name=" ".join(name.split(" ")[1:]) if name and len(name.split(" ")) > 1 else ""
                 )
                 created = True
-
-            # 🔹 Szukamy zdjęcia profilowego (z modelu Profile, jeśli istnieje)
             profile_image_url = None
 
             if hasattr(user, "profile"):
@@ -256,11 +238,10 @@ class GoogleAuthView(generics.ListCreateAPIView):
                     except Exception:
                         profile_image_url = None
 
-            # Jeśli brak zdjęcia w profilu, użyj zdjęcia z Google
+        
             if not profile_image_url:
                 profile_image_url = google_picture
 
-            # 🔹 Tokeny JWT
             refresh = RefreshToken.for_user(user)
             access_token = str(refresh.access_token)
 

@@ -23,7 +23,6 @@ class UpdateProfileImageView(generics.UpdateAPIView):
         if not new_image:
             return response.Response({"error": "Brak pliku."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 🧹 Usunięcie starego zdjęcia z Cloudinary, jeśli istnieje
         old_image = profile.profile_image
         if old_image and hasattr(old_image, "public_id"):
             try:
@@ -31,7 +30,6 @@ class UpdateProfileImageView(generics.UpdateAPIView):
             except Exception as e:
                 print("⚠️ Błąd przy usuwaniu starego zdjęcia:", e)
 
-        # 📤 Zapis nowego zdjęcia — automatyczny upload do Cloudinary
         profile.profile_image = new_image
         profile.save()
 
@@ -110,7 +108,7 @@ class PasswordResetConfirmView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        print(request.data)  # <-- sprawdź, co faktycznie przychodzi
+        print(request.data) 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()

@@ -6,7 +6,7 @@ from ..pagination import *
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import generics
 
-# 🔸 StylArtystyczny
+
 class StylArtystycznyCreate(generics.ListCreateAPIView):
     queryset = StylArtystyczny.objects.all()
     serializer_class = StylArtystycznySerializer
@@ -17,8 +17,7 @@ class StylArtystycznyDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = StylArtystycznySerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Kompozycja
+a
 class KompozycjaCreate(generics.ListCreateAPIView):
     queryset = Kompozycja.objects.all()
     serializer_class = KompozycjaSerializer
@@ -29,8 +28,6 @@ class KompozycjaDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = KompozycjaSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Kolorystyka
 class KolorystykaCreate(generics.ListCreateAPIView):
     queryset = Kolorystyka.objects.all()
     serializer_class = KolorystykaSerializer
@@ -42,7 +39,6 @@ class KolorystykaDetail(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
 
-# 🔸 Atmosfera
 class AtmosferaCreate(generics.ListCreateAPIView):
     queryset = Atmosfera.objects.all()
     serializer_class = AtmosferaSerializer
@@ -54,7 +50,6 @@ class AtmosferaDetail(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
 
 
-# 🔸 Inspiracja
 class InspiracjaCreate(generics.ListCreateAPIView):
     queryset = Inspiracja.objects.all()
     serializer_class = InspiracjaSerializer
@@ -65,8 +60,6 @@ class InspiracjaDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = InspiracjaSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Tło
 class TloCreate(generics.ListCreateAPIView):
     queryset = Tlo.objects.all()
     serializer_class = TloSerializer
@@ -77,8 +70,6 @@ class TloDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = TloSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Perspektywa
 class PerspektywaCreate(generics.ListCreateAPIView):
     queryset = Perspektywa.objects.all()
     serializer_class = PerspektywaSerializer
@@ -89,8 +80,6 @@ class PerspektywaDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = PerspektywaSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Detale
 class DetaleCreate(generics.ListCreateAPIView):
     queryset = Detale.objects.all()
     serializer_class = DetaleSerializer
@@ -101,8 +90,6 @@ class DetaleDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DetaleSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Realizm
 class RealizmCreate(generics.ListCreateAPIView):
     queryset = Realizm.objects.all()
     serializer_class = RealizmSerializer
@@ -113,8 +100,6 @@ class RealizmDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RealizmSerializer
     permission_classes = [IsAuthenticated]
 
-
-# 🔸 Styl Narracyjny
 class StylNarracyjnyCreate(generics.ListCreateAPIView):
     queryset = StylNarracyjny.objects.all()
     serializer_class = StylNarracyjnySerializer
