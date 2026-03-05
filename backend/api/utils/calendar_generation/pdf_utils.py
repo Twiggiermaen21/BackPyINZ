@@ -4,6 +4,19 @@ from PIL import Image, ImageCms
 # sciezka do profilu ICC
 CMYK_PROFILE_PATH = os.path.join(os.path.dirname(__file__), "profiles", "FOGRA51_v3.icc")
 
+def hex_to_rgb(hex_color):
+    """
+    Konwertuje napis koloru HEX (np. '#FFFFFF') na krotke wartosci RGB (R, G, B).
+    """
+    hex_color = hex_color.lstrip("#")
+    
+    if len(hex_color) == 6:
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    else:
+        raise ValueError("Nieprawidlowy format koloru HEX")
+
+
+
 def rgb_to_cmyk(pil_image):
     """
     Uzytkownik przesyla pliki i interfejs operuje domyslnie w systemie monitorowym (RGB - sRGB).
