@@ -1,16 +1,12 @@
 
 import os
 import requests
-from django.db.models import Prefetch
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 from ..models import Calendar, CalendarYearData, GeneratedImage
-from .utils import save_as_psd, create_export_folder, hex_to_rgb, get_font_path, load_font
+from .utils import save_as_psd, create_export_folder, hex_to_rgb, load_font
 import math
-import time
 import shutil
 from io import BytesIO
-from psd_tools import PSDImage
-from psd_tools.api.layers import PixelLayer
 
 try:
     from psd_tools import PSDImage
@@ -44,7 +40,6 @@ AD_CONTENT_WIDTH = BOX_WIDTH
 BACKING_HEIGHT = 7290
 
 
-MONTH_NAMES = ["GRUDZIEŃ", "STYCZEŃ", "LUTY"]
 
 def fetch_calendar_data(calendar_id):
   
@@ -471,15 +466,7 @@ def generate_backing(data, export_dir, production_id=None):
                 fill="white", outline="#e5e7eb", width=5,
             )
 
-            month_name = MONTH_NAMES[i - 1]
-            m_font = load_font("arial.ttf", 150)
             center_x = BOX_X + BOX_WIDTH / 2
-            l, t, r, b = draw.textbbox((0, 0), month_name, font=m_font)
-            draw.text(
-                (center_x - (r - l) / 2, cal_y + 40),
-                month_name, font=m_font, fill="#1d4ed8",
-            )
-
             g_font = load_font("arial.ttf", 100)
             g_text = "[Siatka dni]"
             gl, gt, gr, gb = draw.textbbox((0, 0), g_text, font=g_font)

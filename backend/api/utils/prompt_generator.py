@@ -54,6 +54,7 @@ def generate_custom_prompt(
     if styl_narracyjny:
         prompt += f"The narrative style of the image should resemble: {styl_narracyjny}. "
     return prompt
+
 def get_detailed_prompt_from_model(
     client,
     base_prompt: str,

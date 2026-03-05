@@ -1,10 +1,8 @@
-from itertools import count
 import os
 from dotenv import load_dotenv
 from .prompt_generator import get_detailed_prompt_from_model
 from .image_generator import generate_image
 from together import Together
-
 load_dotenv()
 
 def generate_image_from_prompt(base_prompt, width, height,

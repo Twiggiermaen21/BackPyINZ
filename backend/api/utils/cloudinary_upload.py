@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 import cloudinary
 import cloudinary.uploader
 import io
-
 load_dotenv()
 
 cloudinary.config(
@@ -26,7 +25,6 @@ def upload_image(file, folder_name=None, file_name=None):
             options["folder"] = folder_name
 
         if file_name:
-    
             file_name = os.path.splitext(file_name)[0]
             options["public_id"] = file_name
 
