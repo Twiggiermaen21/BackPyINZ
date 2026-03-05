@@ -17,7 +17,7 @@ class StylArtystycznyDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = StylArtystycznySerializer
     permission_classes = [IsAuthenticated]
 
-a
+
 class KompozycjaCreate(generics.ListCreateAPIView):
     queryset = Kompozycja.objects.all()
     serializer_class = KompozycjaSerializer
