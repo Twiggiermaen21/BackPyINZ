@@ -13,7 +13,7 @@ import json
 from rest_framework import generics, status, response, permissions
 from django.conf import settings
 import os
-from ..utils.services import (
+from ..utils.calendar_generation.services import (
     fetch_calendar_data,
     generate_calendar, 
     get_year_data, 

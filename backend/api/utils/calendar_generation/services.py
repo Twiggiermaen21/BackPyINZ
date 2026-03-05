@@ -2,8 +2,9 @@
 import os
 import requests
 from PIL import Image, ImageDraw, ImageOps
-from ..models import Calendar, CalendarYearData, GeneratedImage
-from .utils import save_as_psd, create_export_folder, hex_to_rgb, load_font
+from ...models import Calendar, CalendarYearData, GeneratedImage
+from .utils import create_export_folder, hex_to_rgb, load_font
+from .pdf_utils import save_as_pdf, rgb_to_cmyk
 import math
 import shutil
 from io import BytesIO
@@ -408,7 +409,7 @@ def generate_header(top_image_path, data, export_dir, production_id=None):
                 )
 
             img_rgb = img_fitted.convert("RGB")
-            saved_path = save_as_psd(img_rgb, output_path) 
+            saved_path = save_as_pdf(img_rgb, output_path) 
 
             print(f"✅ Główka: {saved_path} ({HEADER_WIDTH}×{HEADER_HEIGHT} px)")
             return saved_path
@@ -595,7 +596,7 @@ def generate_backing(data, export_dir, production_id=None):
                 y = ad_y + H_AD_STRIP_NEW + GAP_AFTER_AD_LAST
 
      
-        saved_path = save_as_psd(base_img, output_path)
+        saved_path = save_as_pdf(base_img, output_path)
         print(f"✅ Plecy: {saved_path} ({BACKING_WIDTH}×{BACKING_HEIGHT} px = 321×641 mm)")
 
         if template_image_path:

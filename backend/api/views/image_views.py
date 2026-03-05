@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated,  AllowAny
 from ..models import *
 from ..serializers import *
 from ..pagination import *
-from ..utils.generation import generate_image_from_prompt
+from ..utils.image_generation.generation import generate_image_from_prompt
 from ..utils.upscaling import upscale_image_with_bigjpg
 from ..utils.cloudinary_upload import upload_image
 import os
