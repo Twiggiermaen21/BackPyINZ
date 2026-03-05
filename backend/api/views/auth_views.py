@@ -142,6 +142,7 @@ class PasswordChangeView(generics.UpdateAPIView):
         return response.Response({"detail": "Hasło zostało zmienione"}, status=status.HTTP_200_OK)
 
 
+
 class PasswordResetView(generics.ListCreateAPIView):
     serializer_class = PasswordResetSerializer
     permission_classes = [AllowAny]
@@ -150,11 +151,12 @@ class PasswordResetView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
+        success_message = "Jeśli podany adres email istnieje w naszej bazie, wysłaliśmy na niego link do resetu hasła."
 
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return response.Response({"detail": "Email wysłany, jeśli użytkownik istnieje"}, status=200)
+            return response.Response({"detail": success_message}, status=status.HTTP_200_OK)
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
@@ -180,8 +182,8 @@ class PasswordResetView(generics.ListCreateAPIView):
             html_message=html_message 
         )
 
-        return response.Response({"detail": "Email resetujący został wysłany"}, status=200)
-
+        return response.Response({"detail": success_message}, status=status.HTTP_200_OK)
+    
 class PasswordResetConfirmView(generics.ListCreateAPIView):
     serializer_class = PasswordResetConfirmSerializer
     permission_classes = [AllowAny]

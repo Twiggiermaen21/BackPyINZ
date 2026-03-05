@@ -1,4 +1,3 @@
-# calendar_export/utils.py
 import os
 from psd_tools import PSDImage
 import requests  
@@ -18,7 +17,7 @@ from PIL import Image, ImageCms
 import os
 CMYK_PROFILE_PATH = os.path.join(
     # os.path.dirname(__file__), "profiles", "PSOuncoated_v3_FOGRA52.icc"
-        os.path.dirname(__file__), "profiles", "eciCMYK_v2.icc"
+        os.path.dirname(__file__), "profiles", "FOGRA51_v3.icc"
 
 )
 def hex_to_rgb(hex_color):

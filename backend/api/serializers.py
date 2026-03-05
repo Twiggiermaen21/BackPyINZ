@@ -5,6 +5,8 @@ from .models import *
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, password_validation
 from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth.password_validation import validate_password
+
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -23,23 +25,46 @@ class ProfileImageSerializer(serializers.ModelSerializer):
         return obj.profile_image.url if obj.profile_image else None
 
 
+
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
     profile = ProfileImageSerializer(required=False)
     
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "password", 'profile']
-
+        fields = ["id", "username", "email", "first_name", "last_name", "password", "profile"]
+        # Nadpisujemy domyślny komunikat błędu dla unikalnego username
+        extra_kwargs = {
+            'username': {
+                'error_messages': {
+                    'unique': 'Użytkownik z takimi danymi już istnieje.'
+                }
+            }
+        }
 
     def validate_email(self, value):
-        """Sprawdza, czy email jest unikalny."""
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Użytkownik z tym adresem e-mail już istnieje.")
+        """Sprawdza unikalność emaila i zwraca uogólniony komunikat."""
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Użytkownik z takimi danymi już istnieje.")
+        return value
+
+    def validate_password(self, value):
+        """
+        Waliduje hasło za pomocą wbudowanych (i przetłumaczonych przez Ciebie na polski) 
+        walidatorów Django.
+        """
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            # exc.messages będzie zawierać polskie teksty, np. "To hasło jest za krótkie..."
+            raise serializers.ValidationError(list(exc.messages))
         return value
 
     def create(self, validated_data):
         print("🔧 Tworzenie użytkownika z danymi:", validated_data)
+        
+        profile_data = validated_data.pop('profile', None)
+
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data.get("email", ""),
@@ -48,13 +73,11 @@ class UserSerializer(serializers.ModelSerializer):
             password=validated_data["password"],
         )
 
-          # Ustawiamy użytkownika jako nieaktywny do czasu aktywacji
         user.is_active = False
         user.save()
         print("✅ Utworzono użytkownika:", user.username)
+
         return user
-
-
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     username = serializers.CharField(required=True)
