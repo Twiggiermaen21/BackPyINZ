@@ -4,13 +4,14 @@
   <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Cloudinary-3448C5?style=for-the-badge&logo=cloudinary&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" />
 </p>
 
 # 🗓️ AI Calendar Generator — Backend
 
 > **Serwer aplikacyjny do generowania kalendarzy trójdzielnych z grafikami AI, gotowych do profesjonalnego druku.**
 
-System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kalendarzy trójdzielnych z grafikami wygenerowanymi przez sztuczną inteligencję. Backend odpowiada za cały pipeline — od promptu tekstowego, przez generowanie i upscaling grafik, aż po eksport plików PSD w przestrzeni CMYK z odpowiednimi spadami drukarskimi.
+System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kalendarzy trójdzielnych z grafikami wygenerowanymi przez sztuczną inteligencję. Backend odpowiada za cały pipeline — od promptu tekstowego, przez generowanie i upscaling grafik, aż po eksport gotowych plików PDF w przestrzeni CMYK gotowych do druku.
 
 ---
 
@@ -20,7 +21,7 @@ System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kal
 
 🔍 **Upscaling do rozdzielczości drukarskiej** — automatyczne powiększanie grafik przez Bigjpg API do wymaganego minimum 300 DPI
 
-🖨️ **Eksport print-ready PSD** — generowanie wielowarstwowych plików PSD z konwersją RGB→CMYK, spadami i wymiarami zgodnymi z wymaganiami drukarni
+🖨️ **Eksport print-ready PDF** — generowanie plików PDF z konwersją RGB→CMYK, spady i wymiary zgodne z wymaganiami drukarni
 
 ☁️ **Zarządzanie zasobami** — przechowywanie i serwowanie grafik przez Cloudinary
 
@@ -33,8 +34,8 @@ System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kal
 ## 🏗️ Architektura
 
 ```
-┌─────────────────┐       HTTPS (REST API)       ┌──────────────────────┐
-│   React App     │◄────────────────────────────►│  Django / Gunicorn   │
+┌─────────────────┐                               ┌──────────────────────┐
+│   React App     │◄────────────────────────────► │  Django / Gunicorn   │
 │   (Frontend)    │                               │  (DRF Backend)       │
 └─────────────────┘                               └──────────┬───────────┘
                                                              │
@@ -43,7 +44,7 @@ System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kal
                               ▼                               ▼                       ▼
                     ┌──────────────────┐          ┌─────────────────┐      ┌──────────────────┐
                     │   PostgreSQL     │          │   Together AI   │      │   Cloudinary     │
-                    │   Database       │          │   FLUX + LLM   │      │   Cloud Storage  │
+                    │   Database       │          │   FLUX + LLM    │      │   Cloud Storage  │
                     └──────────────────┘          └─────────────────┘      └──────────────────┘
                                                              │
                                                              ▼
@@ -59,28 +60,43 @@ System B2B umożliwiający drukarniom oferowanie klientom spersonalizowanych kal
 
 ```
 backend/
-├── views/
-│   ├── auth_views.py          # Rejestracja, logowanie, JWT, Google OAuth
-│   ├── calendar_views.py      # CRUD kalendarzy, produkcja PSD
-│   ├── image_views.py         # Generowanie i zarządzanie grafikami AI
-│   ├── metadata_views.py      # Style, kompozycje, kolorystyki, atmosfery
-│   └── profile_views.py       # Profil użytkownika, awatary
-│
-├── utils/
-│   ├── image_generator.py     # Integracja z Together AI (FLUX.1-schnell)
-│   ├── prompt_generator.py    # Budowanie promptów z parametrów użytkownika
-│   ├── upscaling.py           # Integracja z Bigjpg API
-│   ├── generation.py          # Pipeline generowania PSD (CMYK, spady)
-│   ├── cloudinary_upload.py   # Upload i zarządzanie zasobami w chmurze
-│   ├── services.py            # Logika biznesowa i helpery
-│   └── fonts/                 # Czcionki do renderowania kalendarzy
-│
-├── models.py                  # ~20+ modeli Django ORM
-├── serializers.py             # Serializery DRF
-├── urls.py                    # Routing API
-├── pagination.py              # Konfiguracja paginacji
-├── admin.py                   # Panel administracyjny
-└── tests.py                   # Testy
+├── api/                     # Główna aplikacja Django
+│   ├── views/
+│   │   ├── auth_views.py          # Rejestracja, logowanie, JWT, Google OAuth
+│   │   ├── calendar_views.py      # CRUD kalendarzy, produkcja PDF
+│   │   ├── color_views.py         # CRUD elementów interfejsu
+│   │   ├── image_views.py         # Generowanie i zarządzanie grafikami AI
+│   │   ├── metadata_views.py      # Style, kompozycje, kolorystyki, atmosfery
+│   │   └── profile_views.py       # Profil użytkownika, awatary
+│   │
+│   ├── utils/
+│   │   ├── calendar_generator/    # Skrypty generowania kalendarza i PDF
+│   │   │   ├── colors.py
+│   │   │   ├── config.py
+│   │   │   ├── data_fetcher.py
+│   │   │   ├── data_handlers.py
+│   │   │   ├── file_utils.py
+│   │   │   ├── fonts.py
+│   │   │   ├── gradients.py
+│   │   │   ├── images.py
+│   │   │   ├── pdf_generator.py
+│   │   │   ├── pdf_utils.py
+│   │   │   ├── fonts/           # Czcionki wykorzystywane w PDF
+│   │   │   └── profiles/        # Profile ICC CMYK
+│   │   │
+│   │   ├── image_generation/      # Skrypty dot. generowania obrazów AI
+│   │   │   ├── generation.py
+│   │   │   ├── image_generator.py
+│   │   │   └── prompt_generator.py
+│   │   │
+│   │   ├── cloudinary_upload.py   # Upload i zarządzanie zasobami w chmurze
+│   │   └── upscaling.py           # Integracja z Bigjpg API
+│   │
+│   ├── models.py                  # ~20+ modeli Django ORM
+│   ├── serializers.py             # Serializery DRF
+│   ├── urls.py                    # Routing API
+│   ├── pagination.py              # Konfiguracja paginacji
+│   └── tests.py                   # Testy
 ```
 
 ---
@@ -90,7 +106,7 @@ backend/
 | Model | Opis |
 |-------|------|
 | `Calendar` | Główny model kalendarza z konfiguracją |
-| `CalendarProduction` | Status i pliki produkcji PSD |
+| `CalendarProduction` | Status i pliki produkcji PDF |
 | `CalendarMonthFieldText` | Teksty dla poszczególnych miesięcy |
 | `CalendarMonthFieldImage` | Grafiki przypisane do miesięcy |
 | `CalendarYearData` | Dane roczne (imieniny, święta) |
@@ -124,7 +140,7 @@ POST   /api/calendars/              # Utworzenie nowego kalendarza
 GET    /api/calendars/:id/          # Szczegóły kalendarza
 PUT    /api/calendars/:id/          # Aktualizacja kalendarza
 DELETE /api/calendars/:id/          # Usunięcie kalendarza
-POST   /api/calendars/:id/produce/  # Uruchomienie produkcji PSD
+POST   /api/calendars/:id/produce/  # Uruchomienie produkcji PDF
 ```
 
 ### 🎨 Grafiki AI
@@ -156,28 +172,29 @@ POST   /api/profile/avatar/         # Upload awatara
 
 | Kategoria | Technologia |
 |-----------|-------------|
-| **Framework** | Django 5.x + Django REST Framework |
-| **Baza danych** | PostgreSQL |
+| **Framework** | ![Django](https://img.shields.io/badge/Django-092E20?style=flat&logo=django&logoColor=white) ![Django REST](https://img.shields.io/badge/DRF-ff1709?style=flat&logo=django&logoColor=white) |
+| **Baza danych** | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white) |
 | **Uwierzytelnianie** | JWT (SimpleJWT) + Google OAuth 2.0 |
-| **Generowanie grafik** | Together AI — FLUX.1-schnell |
+| **Generowanie grafik** | HTML/JS integration with Together AI — FLUX.1-schnell |
 | **Model językowy** | Together AI — Apriel-Instruct (budowanie promptów) |
 | **Upscaling** | Bigjpg API |
-| **Cloud storage** | Cloudinary |
-| **Generowanie PSD** | Pillow + psd-tools (CMYK, 300 DPI) |
+| **Cloud storage** | ![Cloudinary](https://img.shields.io/badge/Cloudinary-3448C5?style=flat&logo=cloudinary&logoColor=white) |
+| **Generowanie PDF** | ReportLab / PyPDF (CMYK, 300 DPI) |
 | **Serwer WSGI/ASGI** | Gunicorn / Uvicorn |
+| **Konteneryzacja** | ![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=flat&logo=docker&logoColor=white) |
 
 ---
 
-## 🖨️ Pipeline produkcji PSD
+## 🖨️ Pipeline produkcji PDF
 
 ```
 Parametry użytkownika
         │
         ▼
 ┌─────────────────────┐
-│  Prompt Generator    │  ← LLM (Apriel-Instruct) buduje prompt
-│  (styl, atmosfera,   │    z wybranych parametrów
-│   kompozycja, ...)   │
+│  Prompt Generator   │  ← LLM (Apriel-Instruct) buduje prompt
+│  (styl, atmosfera,  │    z wybranych parametrów
+│   kompozycja, ...)  │
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
@@ -189,12 +206,13 @@ Parametry użytkownika
 └─────────┬───────────┘     (nagłówek: 3957×2658px / podkład: 3789×7572px)
           ▼
 ┌─────────────────────┐
-│  PSD Generator      │  ← Konwersja RGB→CMYK, spady 3mm,
-│                     │    warstwy: grafika + siatka + tekst
+│  PDF Generator      │  ← Konwersja RGB→CMYK, aplikowanie siatki
+│                     │    miesiąca z polskimi świętami, składanie
+│                     │    nagłówka i podkładu
 └─────────┬───────────┘
           ▼
-    📄 Plik PSD
-    (300 DPI, CMYK)
+    📄 Plik PDF
+    (Zgodny z CMYK)
 ```
 
 ### Specyfikacja wymiarów
@@ -208,10 +226,35 @@ Parametry użytkownika
 
 ## 🚀 Uruchomienie
 
+### 🐳 Uruchomienie w Dockerze (Rekomendowane)
+
+Najszybszym sposobem na uruchomienie aplikacji jest użycie Dockera. Upewnij się, że masz zainstalowanego Dockera w swoim systemie.
+
 ```bash
 # Klonowanie repozytorium
 git clone https://github.com/Twiggiermaen21/BackPyINZ.git
-cd ai-calendar-backend
+cd BackPyINZ
+
+# Skopiowanie pliku konfiguracyjnego środowiska
+cp backend/.env.example backend/.env
+# UWAGA: Edytuj plik backend/.env i uzupełnij klucze API przed uruchomieniem aplikacji.
+
+# Zbudowanie obrazu Dockera
+docker build -t ai-calendar-backend ./backend
+
+# Uruchomienie kontenera na porcie 8000
+docker run -d -p 8000:8000 --env-file ./backend/.env ai-calendar-backend
+```
+
+### 💻 Uruchomienie lokalne (bez Dockera)
+
+Jeżeli wolisz uruchamiać projekt klasycznie w wirtualnym środowisku:
+
+```bash
+# Klonowanie repozytorium
+git clone https://github.com/Twiggiermaen21/BackPyINZ.git
+cd BackPyINZ
+cd backend
 
 # Utworzenie wirtualnego środowiska
 python -m venv venv
@@ -223,7 +266,7 @@ pip install -r requirements.txt
 
 # Konfiguracja zmiennych środowiskowych
 cp .env.example .env
-# Uzupełnij klucze API w pliku .env
+# Uzupełnij klucze API w pliku .env przed wystartowaniem serwera
 
 # Migracje bazy danych
 python manage.py migrate
@@ -254,8 +297,8 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 ## 📊 Statystyki testów
 
 - **200+** wygenerowanych grafik AI w trakcie rozwoju
-- **100+** pełnych cykli produkcji PSD
-- Przetestowano spójność wizualną pomiędzy podglądem w przeglądarce a wygenerowanym plikiem PSD
+- **100+** pełnych cykli produkcji PDF
+- Przetestowano spójność wizualną pomiędzy podglądem w przeglądarce a wygenerowanym plikiem PDF
 
 ---
 
@@ -264,7 +307,3 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 Projekt realizowany w ramach pracy inżynierskiej.
 
 ---
-
-<p align="center">
-  <sub>Built with ❤️ and AI</sub>
-</p>
